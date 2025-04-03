@@ -2,6 +2,17 @@
 
 This repository is a place for energy forecasting tools. It currently just includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
 
+Look at the notebook [solar_example.ipynb](solar_example.ipynb) for a quick example.
+
+## Suggested environment setup:
+Using miniforge:
+```
+conda create --name energy_forecasting_env python=3.12 -y
+conda activate energy_forecasting_env
+conda install -c conda-forge herbie-data -y
+pip install pvlib ipykernel
+```
+
 ## References
 This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], and Herbie [3, 4], a package for accessing weather forecast data from NOAA. `pv_model.py` (with the `model_pv_power()` function used here) comes from [5].
 
