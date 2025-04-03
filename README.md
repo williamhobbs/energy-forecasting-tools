@@ -14,7 +14,7 @@ pip install pvlib ipykernel
 ```
 
 ## References
-This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], and Herbie [3, 4], a package for accessing weather forecast data from NOAA. `pv_model.py` (with the `model_pv_power()` function used here) comes from [5].
+This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], and Herbie [3, 4], a package for accessing weather forecast data from NOAA. `pv_model.py` (with the `model_pv_power()` function used here) comes from [5] which leverages some functions from [6].
 
 <img src="images/pvlib_powered_logo_horiz.png" width="200"/>
 
@@ -28,3 +28,5 @@ This project uses several Python packages, including pvlib, an open-source solar
 [4] https://github.com/blaylockbk/Herbie
 
 [5] https://github.com/williamhobbs/pv-system-model
+
+[6] Hobbs, W., Anderson, K., Mikofski, M., and Ghiz, M. "An approach to modeling linear and non-linear self-shading losses with pvlib." 2024 PV Performance Modeling Collaborative (PVPMC). https://github.com/williamhobbs/2024_pvpmc_self_shade 
