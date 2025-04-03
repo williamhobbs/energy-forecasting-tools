@@ -158,11 +158,15 @@ def model_pv_power(
 
     # geometry
     if pd.isna(axis_tilt):
-        axis_tilt = 0
+        axis_tilt = 0 # default if no value provided
+    if pd.isna(axis_azimuth):
+        axis_azimuth = 180 # default if no value provided
     if pd.isna(row_side_num_mods):
         row_side_num_mods = 1  # default if no value provided
     if pd.isna(row_height_center):
         row_height_center = 1  # default if no value provided
+    if pd.isna(max_tracker_angle):
+        max_tracker_angle = 60
     
     # gcr = collector_width / row_pitch, gcr is a required input, so users can define 1 of the other 2.
     # If all 3 are defined, check to make sure relationship is correct.
