@@ -3,7 +3,7 @@
 This repository is a place for energy forecasting tools. It currently just includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
 
 ## References
-This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], Herbie [3, 4], a package for accessing weather forecast data from NOAA. 
+This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], and Herbie [3, 4], a package for accessing weather forecast data from NOAA. `pv_model.py` (with the `model_pv_power()` function used here) comes from [5].
 
 <img src="images/pvlib_powered_logo_horiz.png" width="200"/>
 
@@ -15,3 +15,5 @@ This project uses several Python packages, including pvlib, an open-source solar
 [3] Blaylock, B. K. (2025). Herbie: Retrieve Numerical Weather Prediction Model Data (Version 2025.3.1) [Computer software]. https://doi.org/10.5281/zenodo.4567540
 
 [4] https://github.com/blaylockbk/Herbie
+
+[5] https://github.com/williamhobbs/pv-system-model
