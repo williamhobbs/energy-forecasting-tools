@@ -7,7 +7,7 @@ import time
 
 
 def get_solar_forecast(latitude, longitude, init_date, length_hours,
-                       model='gfs', lead_time_hours=0, attempts=2):
+                       lead_time_hours=0, model='gfs', attempts=2):
     """
     Get a solar resource forecast for a single site from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -28,15 +28,15 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
     length_hours : int
         Length of the forecast in hours - number of hours forecasted
 
-    model : String, default 'gfs'
-        Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs').
-
     lead_time_hours : int, optional
         Number of hours between init_date (initialization) and
         the first forecasted interval. NOAA GFS data goes out
         384 hours, so length_hours + lead_time_hours must be less
         than or equal to 384.
+
+    model : String, default 'gfs'
+        Forecast model. Default is NOAA GFS ('gfs'), but can also be
+        ECMWF IFS ('ifs').
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
