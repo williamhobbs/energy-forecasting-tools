@@ -4,6 +4,7 @@ import xarray as xr
 from herbie import Herbie
 import pvlib
 import time
+import warnings
 
 
 def get_solar_forecast(latitude, longitude, init_date, length_hours,
@@ -70,19 +71,28 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
     # convert init_date to datetime
     init_date = pd.to_datetime(init_date)
 
+    # maximum forecast horizon
+    fxx_max = length_hours + lead_time_hours
+
     if model == 'gfs':
         # GFS:
         # 0 to 120 by 1, 123 to 384 by 3
         # runs every 6 hours starting at 00z
-        update_freq = '6h'
+        # update_freq = '6h'
+        # # round down to last actual initialization time
+        # date = init_date.floor(update_freq)
+        date = init_date  # no floor for now, user must enter correct time
+
+        # # offset in hours between selected init_date and fcast run
+        # init_offset = int((init_date - date).total_seconds()/3600)
+        # lead_time_hours = lead_time_hours + init_offset
 
         # set forecast lead times
-        if length_hours + lead_time_hours > 120:
+        if fxx_max > 120:
             fxx_range = [*range(lead_time_hours, 120+1, 1),
-                         *range(123, length_hours + lead_time_hours + 1, 3)]
+                         *range(123, fxx_max + 1, 3)]
         else:
-            fxx_range = range(lead_time_hours,
-                              length_hours + lead_time_hours, 1)
+            fxx_range = range(lead_time_hours, fxx_max, 1)
 
         # Herbie inputs
         product = 'pgrb2.0p25'
@@ -92,26 +102,59 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         # From https://www.ecmwf.int/en/forecasts/datasets/open-data
         # For times 00z &12z: 0 to 144 by 3, 150 to 240 by 6.
         # For times 06z & 18z: 0 to 90 by 3.
+        # From:
+        # https://confluence.ecmwf.int/display/DAC/ECMWF+open+data%3A+real-time+forecasts+from+IFS+and+AIFS
+        # Product "oper" runs 00z, 12z, 0h to 144h by 3h, 144h to 240h by 6h
+        # Product "scda" runs 06z, 18z, 0h to 90h by 3h
+        # **BUT**, see https://github.com/blaylockbk/Herbie/discussions/421
+        # Starting 2024-11-12 06:00, 'scda' runs to 144h by 3h
+
         # pick init time based on forecast max lead time:
-        if length_hours + lead_time_hours > 90:  # forecast beyond 90 h ahead
-            update_freq = '12h'
+        # check if 'scda' product is ideal
+        if init_date.hour == 6 or init_date.hour == 18:
+            if init_date >= pd.to_datetime('2024-11-12 06:00'):
+                scda_fxx_max = 144
+            else:
+                scda_fxx_max = 90
+            if fxx_max > scda_fxx_max:  # forecast beyond scda
+                update_freq = '12h'  # must use 'oper' runs
+                warnings.warn(
+                    ("You have specified an init_date which would have mapped "
+                     "to a 06z or 18z. Those runs the IFS 'scda' product, and "
+                     "'scda' only goes out 144 hours (90h prior to 2024-11-12)"
+                     ". You will get forecasts from the 'oper' run 6 hours "
+                     "earlier, instead."))
+            else:
+                update_freq = '6h'  # can use 'oper' or 'scda'
         else:
-            update_freq = '6h'
+            update_freq = '6h'  # can use 'oper' or 'scda'
+        # round down to last actual initialization time
+        date = init_date.floor(update_freq)
+
+        # offset in hours between selected init_date and fcast run
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_hours = lead_time_hours + init_offset
+        if lead_time_hours > 141:
+            length_hours = max(length_hours, 6)  # make sure it's long enough
+        fxx_max = length_hours + lead_time_hours  # update this
 
         # set forecast intervals
-        if length_hours + lead_time_hours > 144:
+        if lead_time_hours <= 144 and fxx_max > 144:
+            # make sure it goes to at least the next interval
+            fxx_max = max(fxx_max, 150)
             fxx_range = [*range(lead_time_hours, 145, 3),
-                         *range(150, length_hours + lead_time_hours+1, 6)]
+                         *range(150, fxx_max + 1, 6)]
+        elif lead_time_hours > 144:
+            fxx_range = range(lead_time_hours, fxx_max + 1, 6)
         else:
-            fxx_range = range(lead_time_hours,
-                              length_hours + lead_time_hours + 1, 3)
+            fxx_range = range(lead_time_hours, fxx_max + 1, 3)
 
         # Herbie inputs
-        product = 'oper'
+        if date.hour == 6 or date.hour == 18:
+            product = 'scda'
+        else:
+            product = 'oper'
         search_str = ':ssrd|10[uv]|2t:sfc'
-
-    # round down to last actual initialization time
-    date = init_date.floor(update_freq)
 
     i = []
     for fxx in fxx_range:
