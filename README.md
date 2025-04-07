@@ -2,7 +2,7 @@
 
 This repository is a place for some energy forecasting tools. It currently just includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
 
-Look at the notebook [solar_example.ipynb](solar_example.ipynb) for a quick example.
+Look at the notebook [solar_example.ipynb](solar_example.ipynb) for a quick example, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples.
 
 Solar forecasts can be created using the NOAA GFS and ECMWF IFS (open data version) models. I have plans to add NOAA HRRR at some point. 
 
