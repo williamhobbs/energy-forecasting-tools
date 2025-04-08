@@ -15,6 +15,8 @@ conda install -c conda-forge herbie-data -y
 pip install pvlib ipykernel
 ```
 
+Then get a copy of `pv_model.py` from https://github.com/williamhobbs/pv-system-model and place it in the same folder as scripts you want to run. 
+
 ## References
 This project uses several Python packages, including pvlib, an open-source solar PV modeling package [1, 2], and Herbie [3, 4], a package for accessing weather forecast data from NOAA. `pv_model.py` (with the `model_pv_power()` function used here) comes from [5] which leverages some functions from [6].
 
