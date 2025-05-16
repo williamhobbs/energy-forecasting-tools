@@ -8,7 +8,8 @@ import warnings
 
 
 def get_solar_forecast(latitude, longitude, init_date, length_hours,
-                       lead_time_hours=0, model='gfs', attempts=2):
+                       lead_time_hours=0, model='gfs', attempts=2,
+                       hrrr_hour_middle=True):
     """
     Get a solar resource forecast for a single site from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -37,12 +38,19 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
 
     model : String, default 'gfs'
         Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs').
+        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
         for n^2 minutes after each n attempt, e.g., 1 min after the first
         attempt, 4 minutes after the second, etc.
+
+    hrrr_hour_middle : bool, default True
+        If model is 'hrrr', setting this False keeps the forecast at the
+        native instantaneous top-of-hour format. True (default) shifts
+        the forecast to middle of the hour, more closely representing an
+        integrated hourly forecast that is centered in the middle of the
+        hour.
 
     Returns
     -------
@@ -155,6 +163,16 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         else:
             product = 'oper'
         search_str = ':ssrd|10[uv]|2t:sfc'
+    
+    elif model == 'hrrr':
+        product = 'sfc'
+        search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
+        update_freq = '1h'
+
+        # round down to last actual initialization time
+        date = init_date.floor(update_freq)
+
+        fxx_range = range(lead_time_hours, fxx_max, 1)
 
     i = []
     for fxx in fxx_range:
@@ -231,6 +249,12 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         df = df_temp[df_temp.index.get_level_values('point') == j]
         df = df.droplevel('point')
 
+        loc = pvlib.location.Location(
+            latitude=latitude[j],
+            longitude=longitude[j],
+            tz=df.index.tz
+            )
+
         if model == 'gfs':
             # for gfs ghi: we have to "unmix" the rolling average irradiance
             # that resets every 6 hours
@@ -259,86 +283,138 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
             # over diff in time to get avg J/s/m^2 = W/m^2
             df['ghi'] = df['sdswrf'].diff() / df.index.diff().seconds.values
 
-        # make 5min interval clear sky data covering our time range
-        times = pd.date_range(
-            start=df.index[0],
-            end=df.index[-1],
-            freq='5min',
-            tz='UTC')
+        elif model == 'hrrr':
+            df['ghi'] = df['sdswrf']
 
-        loc = pvlib.location.Location(
-            latitude=latitude[j],
-            longitude=longitude[j],
-            tz=times.tz
+        if model == 'gfs' or model == 'ifs':
+            # make 5min interval clear sky data covering our time range
+            times = pd.date_range(
+                start=df.index[0],
+                end=df.index[-1],
+                freq='5min',
+                tz='UTC')
+
+            cs = loc.get_clearsky(times, model=model_cs)
+
+            # calculate average CS ghi over the intervals from the forecast
+            # based on list comprehension example in
+            # https://stackoverflow.com/a/55724134/27574852
+            ghi = cs['ghi']
+            dates = df.index
+            ghi_clear = [
+                ghi.loc[(ghi.index > dates[i]) & (ghi.index <= dates[i+1])]
+                .mean() for i in range(len(dates) - 1)
+                ]
+
+            # write to df and calculate clear sky index of ghi
+            df['ghi_clear'] = [np.nan] + ghi_clear
+            df['ghi_csi'] = df['ghi'] / df['ghi_clear']
+
+            # avoid divide by zero issues
+            df.loc[df['ghi'] == 0, 'ghi_csi'] = 0
+
+            # 60min version of data, centered at bottom of the hour
+            # 1min interpolation, then 60min mean
+            df_60min = (
+                df[['temp_air', 'wind_speed']]
+                .resample('1min')
+                .interpolate()
+                .resample('60min').mean()
             )
-        cs = loc.get_clearsky(times, model=model_cs)
+            # make timestamps center-labeled for instantaneous pvlib modeling
+            # later
+            df_60min.index = df_60min.index + pd.Timedelta('30min')
+            # drop last row, since we don't have data for the last full hour
+            # (just an instantaneous end point)
+            df_60min = df_60min.iloc[:-1]
+            # "backfill" ghi csi
+            # merge based on nearest index from 60min version looking forward
+            # in 3hr version
+            df_60min = pd.merge_asof(
+                left=df_60min,
+                right=df.ghi_csi,
+                on='valid_time',
+                direction='forward'
+            ).set_index('valid_time')
 
-        # calculate average CS ghi over the intervals from the forecast
-        # based on list comprehension example in
-        # https://stackoverflow.com/a/55724134/27574852
-        ghi = cs['ghi']
-        dates = df.index
-        ghi_clear = [
-            ghi.loc[(ghi.index > dates[i]) & (ghi.index <= dates[i+1])].mean()
-            for i in range(len(dates) - 1)
-            ]
+            # make 60min interval clear sky, centered at bottom of the hour
+            times = pd.date_range(
+                start=df.index[0]+pd.Timedelta('30m'),
+                end=df.index[-1]-pd.Timedelta('30m'),
+                freq='60min',
+                tz='UTC')
+            cs = loc.get_clearsky(times, model=model_cs)
 
-        # write to df and calculate clear sky index of ghi
-        df['ghi_clear'] = [np.nan] + ghi_clear
-        df['ghi_csi'] = df['ghi'] / df['ghi_clear']
+            # calculate ghi from clear sky and backfilled forecasted clear sky
+            # index
+            df_60min['ghi'] = cs['ghi'] * df_60min['ghi_csi']
 
-        # avoid divide by zero issues
-        df.loc[df['ghi'] == 0, 'ghi_csi'] = 0
+            # dni and dhi using pvlib erbs. could also DIRINT or erbs-driesse
+            sp = loc.get_solarposition(times)
+            out_erbs = pvlib.irradiance.erbs(
+                df_60min.ghi,
+                sp.zenith,
+                df_60min.index,
+            )
+            df_60min['dni'] = out_erbs.dni
+            df_60min['dhi'] = out_erbs.dhi
 
-        # 60min version of data, centered at bottom of the hour
-        # 1min interpolation, then 60min mean
-        df_60min = (
-            df[['temp_air', 'wind_speed']]
-            .resample('1min')
-            .interpolate()
-            .resample('60min').mean()
-        )
-        # make timestamps center-labeled for instantaneous pvlib modeling later
-        df_60min.index = df_60min.index + pd.Timedelta('30min')
-        # drop last row, since we don't have data for the last full hour (just
-        # an instantaneous end point)
-        df_60min = df_60min.iloc[:-1]
-        # "backfill" ghi csi
-        # merge based on nearest index from 60min version looking forward in
-        # 3hr version
-        df_60min = pd.merge_asof(
-            left=df_60min,
-            right=df.ghi_csi,
-            on='valid_time',
-            direction='forward'
-        ).set_index('valid_time')
+            # add clearsky ghi
+            df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
 
-        # make 60min interval clear sky, centered at bottom of the hour
-        times = pd.date_range(
-            start=df.index[0]+pd.Timedelta('30m'),
-            end=df.index[-1]-pd.Timedelta('30m'),
-            freq='60min',
-            tz='UTC')
-        cs = loc.get_clearsky(times, model=model_cs)
+            dfs[j] = df_60min
+        
+        elif model == 'hrrr':
+            if hrrr_hour_middle is True:
+                # clear sky index
+                times = df.index
+                cs = loc.get_clearsky(times, model=model_cs)
+                df['csi'] = df['ghi'] / cs['ghi']
+                # avoid divide by zero issues
+                df.loc[df['ghi'] == 0, 'csi'] = 0
 
-        # calculate ghi from clear sky and backfilled forecasted clear sky
-        # index
-        df_60min['ghi'] = cs['ghi'] * df_60min['ghi_csi']
+                # make 1min interval clear sky data covering our time range
+                times = pd.date_range(
+                    start=df.index[0],
+                    end=df.index[-1],
+                    freq='1min',
+                    tz='UTC')
 
-        # dni and dhi using pvlib erbs. could also DIRINT or erbs-driesse
-        sp = loc.get_solarposition(times)
-        out_erbs = pvlib.irradiance.erbs(
-            df_60min.ghi,
-            sp.zenith,
-            df_60min.index,
-        )
-        df_60min['dni'] = out_erbs.dni
-        df_60min['dhi'] = out_erbs.dhi
+                cs = loc.get_clearsky(times, model=model_cs)
+                # calculate 
+                # 1min interpolated temp_air, wind_speed, csi
+                df_01min = (
+                    df[['temp_air', 'wind_speed', 'csi']]
+                    .resample('1min')
+                    .interpolate()
+                )
+                # add ghi_clear
+                df_01min['ghi_clear'] = cs['ghi']
+                # calculate hour averages centered labelled at bottom of the
+                # hour
+                df_60min = df_01min.resample('1h').mean()
+                df_60min.index = df_60min.index + pd.Timedelta('30min')
+                # calculate new ghi
+                df_60min['ghi'] = df_60min['csi'] * df_60min['ghi_clear']
 
-        # add clearsky ghi
-        df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
+            else:
+                df_60min = df.copy()
 
-        dfs[j] = df_60min
+            # dni and dhi using pvlib erbs. could also DIRINT or erbs-driesse
+            sp = loc.get_solarposition(df_60min.index)
+            out_erbs = pvlib.irradiance.erbs(
+                df_60min.ghi,
+                sp.zenith,
+                df_60min.index,
+            )
+            df_60min['dni'] = out_erbs.dni
+            df_60min['dhi'] = out_erbs.dhi
+
+            # add clearsky ghi
+            cs = loc.get_clearsky(df_60min.index, model=model_cs)
+            df_60min['ghi_clear'] = cs['ghi']
+
+            dfs[j] = df_60min.copy()
 
     # concatenate creating multiindex with keys of the list of point numbers
     # assigned to 'point', reorder indices, and sort by valid_time
@@ -350,5 +426,8 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
 
     # set "point" index as a column
     df_60min = df_60min.reset_index().set_index('valid_time')
+
+    # drop unneeded columns if they exist
+    df_60min = df_60min.drop(['t2m', 'sdswrf'], axis=1, errors='ignore')
 
     return df_60min
