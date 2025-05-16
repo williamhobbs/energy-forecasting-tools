@@ -4,7 +4,7 @@ This repository is a place for some energy forecasting tools. It currently just 
 
 Look at the notebook [solar_example.ipynb](solar_example.ipynb) for a quick example, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples.
 
-Solar forecasts can be created using the NOAA GFS and ECMWF IFS (open data version) models. I have plans to add NOAA HRRR at some point. 
+Solar forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
 
 ## Suggested environment setup:
 Using miniforge:
