@@ -2,9 +2,36 @@
 
 This repository is a place for some energy forecasting tools. It currently just includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
 
-Look at the notebook [solar_example.ipynb](solar_example.ipynb) for a quick example, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples.
+Look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
 
-Solar forecasts can be created using the NOAA GFS and ECMWF IFS (open data version) models. I have plans to add NOAA HRRR at some point. 
+Solar forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
+
+## Quick example
+
+Here's a quick example of just getting a resource data forecast:
+
+```python
+from forecast_solar import get_solar_forecast
+
+latitude = 33.5
+longitude = -86.8
+init_date = '2024-06-05 6:00' # datetime the forecast model was initialized
+resource_data = get_solar_forecast(
+    latitude,
+    longitude,
+    init_date,
+    length_hours=18, # 18 hours are included in the forecast
+    lead_time_hours=3, # forecast starts 3 hours out from the init_date
+    model='hrrr', # use NOAA HRRR
+)
+resource_data[
+    ['ghi','dni','dhi','temp_air','wind_speed']
+              ].plot(drawstyle='steps-mid')
+```
+
+with this output:
+
+<img src="images/output.png" width="500"/>
 
 ## Suggested environment setup:
 Using miniforge:
