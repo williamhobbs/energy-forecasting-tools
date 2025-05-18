@@ -7,81 +7,8 @@ import time
 import warnings
 
 
-def get_solar_forecast(latitude, longitude, init_date, length_hours,
-                       lead_time_hours=0, model='gfs', attempts=2,
-                       hrrr_hour_middle=True):
-    """
-    Get a solar resource forecast for a single site from one of several
-    NWPs. This function uses Herbie [1]_ and pvlib [2]_.
-
-    Parameters
-    ----------
-    latitude : float or list of floats
-        Latitude in decimal degrees. Positive north of equator, negative
-        to south.
-
-    longitude : float or list of floats
-        Longitude in decimal degrees. Positive east of prime meridian,
-        negative to west.
-
-    init_date : pandas-parsable datetime
-        Model initialization datetime.
-
-    length_hours : int
-        Length of the forecast in hours - number of hours forecasted
-
-    lead_time_hours : int, optional
-        Number of hours between init_date (initialization) and
-        the first forecasted interval. NOAA GFS data goes out
-        384 hours, so length_hours + lead_time_hours must be less
-        than or equal to 384.
-
-    model : String, default 'gfs'
-        Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
-
-    attempts : int, optional
-        Number of times to try getting forecast data. The function will pause
-        for n^2 minutes after each n attempt, e.g., 1 min after the first
-        attempt, 4 minutes after the second, etc.
-
-    hrrr_hour_middle : bool, default True
-        If model is 'hrrr', setting this False keeps the forecast at the
-        native instantaneous top-of-hour format. True (default) shifts
-        the forecast to middle of the hour, more closely representing an
-        integrated hourly forecast that is centered in the middle of the
-        hour.
-
-    Returns
-    -------
-    data : pandas.DataFrane
-        timeseries forecasted solar resource data
-
-    References
-    ----------
-
-    .. [1] `Blaylock, B. K. (YEAR). Herbie: Retrieve Numerical Weather
-       Prediction Model Data (Version 20xx.x.x) [Computer software].
-       <https://doi.org/10.5281/zenodo.4567540>`_
-    .. [2] `Anderson, K., et al. “pvlib python: 2023 project update.” Journal
-       of Open Source Software, 8(92), 5994, (2023).
-       <http://dx.doi.org/10.21105/joss.05994>`_
-    """
-
-    # set clear sky model. could be an input variable at some point
-    model_cs = 'haurwitz'
-
-    # variable formatting
-    # if lat, lon are single values, convert to lists for pickpoints later
-    if type(latitude) is float or type(latitude) is int:
-        latitude = [latitude]
-        longitude = [longitude]
-    # convert init_date to datetime
-    init_date = pd.to_datetime(init_date)
-
-    # maximum forecast horizon
-    fxx_max = length_hours + lead_time_hours
-
+def model_input_formatting(init_date, fxx_max, length_hours,
+                           lead_time_hours=0, model='gfs'):
     if model == 'gfs':
         # GFS:
         # 0 to 120 by 1, 123 to 384 by 3
@@ -163,7 +90,7 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         else:
             product = 'oper'
         search_str = ':ssrd|10[uv]|2t:sfc'
-    
+
     elif model == 'hrrr':
         product = 'sfc'
         search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
@@ -173,6 +100,88 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         date = init_date.floor(update_freq)
 
         fxx_range = range(lead_time_hours, fxx_max, 1)
+
+    return date, fxx_range, product, search_str
+
+
+def get_solar_forecast(latitude, longitude, init_date, length_hours,
+                       lead_time_hours=0, model='gfs', attempts=2,
+                       hrrr_hour_middle=True, hrrr_coursen_window=None):
+    """
+    Get a solar resource forecast for a single site from one of several
+    NWPs. This function uses Herbie [1]_ and pvlib [2]_.
+
+    Parameters
+    ----------
+    latitude : float or list of floats
+        Latitude in decimal degrees. Positive north of equator, negative
+        to south.
+
+    longitude : float or list of floats
+        Longitude in decimal degrees. Positive east of prime meridian,
+        negative to west.
+
+    init_date : pandas-parsable datetime
+        Model initialization datetime.
+
+    length_hours : int
+        Length of the forecast in hours - number of hours forecasted
+
+    lead_time_hours : int, optional
+        Number of hours between init_date (initialization) and
+        the first forecasted interval. NOAA GFS data goes out
+        384 hours, so length_hours + lead_time_hours must be less
+        than or equal to 384.
+
+    model : String, default 'gfs'
+        Forecast model. Default is NOAA GFS ('gfs'), but can also be
+        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
+
+    attempts : int, optional
+        Number of times to try getting forecast data. The function will pause
+        for n^2 minutes after each n attempt, e.g., 1 min after the first
+        attempt, 4 minutes after the second, etc.
+
+    hrrr_hour_middle : bool, default True
+        If model is 'hrrr', setting this False keeps the forecast at the
+        native instantaneous top-of-hour format. True (default) shifts
+        the forecast to middle of the hour, more closely representing an
+        integrated hourly forecast that is centered in the middle of the
+        hour.
+
+    Returns
+    -------
+    data : pandas.DataFrane
+        timeseries forecasted solar resource data
+
+    References
+    ----------
+
+    .. [1] `Blaylock, B. K. (YEAR). Herbie: Retrieve Numerical Weather
+       Prediction Model Data (Version 20xx.x.x) [Computer software].
+       <https://doi.org/10.5281/zenodo.4567540>`_
+    .. [2] `Anderson, K., et al. “pvlib python: 2023 project update.” Journal
+       of Open Source Software, 8(92), 5994, (2023).
+       <http://dx.doi.org/10.21105/joss.05994>`_
+    """
+
+    # set clear sky model. could be an input variable at some point
+    model_cs = 'haurwitz'
+
+    # variable formatting
+    # if lat, lon are single values, convert to lists for pickpoints later
+    if type(latitude) is float or type(latitude) is int:
+        latitude = [latitude]
+        longitude = [longitude]
+    # convert init_date to datetime
+    init_date = pd.to_datetime(init_date)
+
+    # maximum forecast horizon
+    fxx_max = length_hours + lead_time_hours
+
+    # get model-specific Herbie inputs
+    date, fxx_range, product, search_str = model_input_formatting(
+        init_date, fxx_max, length_hours, lead_time_hours, model)
 
     i = []
     for fxx in fxx_range:
@@ -213,6 +222,11 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         ds = xr.merge(ds, compat='override')
         # calculate wind speed from u and v components
         ds = ds.herbie.with_wind('speed')
+
+        if model == 'hrrr' and hrrr_coursen_window is not None:
+            ds = ds.coarsen(x=hrrr_coursen_window,
+                            y=hrrr_coursen_window,
+                            boundary='trim').mean()
 
         # use pick_points for single point or list of points
         i.append(
@@ -287,11 +301,11 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
             df['ghi'] = df['sdswrf']
 
         if model == 'gfs' or model == 'ifs':
-            # make 5min interval clear sky data covering our time range
+            # make 1min interval clear sky data covering our time range
             times = pd.date_range(
                 start=df.index[0],
                 end=df.index[-1],
-                freq='5min',
+                freq='1min',
                 tz='UTC')
 
             cs = loc.get_clearsky(times, model=model_cs)
@@ -363,7 +377,7 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
             df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
 
             dfs[j] = df_60min
-        
+
         elif model == 'hrrr':
             if hrrr_hour_middle is True:
                 # clear sky index
@@ -381,8 +395,7 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
                     tz='UTC')
 
                 cs = loc.get_clearsky(times, model=model_cs)
-                # calculate 
-                # 1min interpolated temp_air, wind_speed, csi
+                # calculate 1min interpolated temp_air, wind_speed, csi
                 df_01min = (
                     df[['temp_air', 'wind_speed', 'csi']]
                     .resample('1min')
