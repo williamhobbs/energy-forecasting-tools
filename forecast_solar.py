@@ -149,6 +149,12 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
         integrated hourly forecast that is centered in the middle of the
         hour.
 
+    hrrr_coursen_window : int or None, default None
+        If model is 'hrrr', optional setting that is the x and y window size
+        for coarsening the xarray dataset, effectively applying spatial
+        smoothing to the HRRR model. The HRRR has a native resolution of
+        about 3 km, so a value of 10 results in approx. 30 x 30 km grid.
+
     Returns
     -------
     data : pandas.DataFrane
