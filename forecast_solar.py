@@ -7,27 +7,68 @@ import time
 import warnings
 
 
-def model_input_formatting(init_date, fxx_max, length_hours,
-                           lead_time_hours=0, model='gfs'):
+def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
+                           model='gfs'):
+    """
+    Helper function to format model-specific inputs for Herbie.
+
+    In the case where the user selects an invalid intitialization date, or
+    combination of init date and lead time, it tries to update the init date
+    and lead time to match a valid init date for the selected model, but this
+    hasn't been fully tested.
+
+    Parameters
+    ----------
+    init_date : pandas-parsable datetime
+        Targetted initialization datetime.
+
+    run_length : int
+        Length of the forecast in hours.
+
+    lead_time_to_start : int
+        Number of hours from the init_date to the first interval in the
+        forecast.
+
+    model : {'gfs', 'ifs', 'hrrr'}
+        Forecast model name, case insensitive. Default is 'gfs'.
+
+    Returns
+    -------
+    date : pandas-parsable datetime
+        initialization date, rounded down to the last valid date for the given
+        model if needed.
+
+    fxx_range : int or list of ints
+        fxx (lead time) values.
+
+    product : string
+        model product, e.g., 'pgrb2.0p25' for 'gfs'
+
+    search_str : string
+        wgrib2-style search string for Herbie to select variables of interest.
+    """
+
     if model == 'gfs':
         # GFS:
         # 0 to 120 by 1, 123 to 384 by 3
         # runs every 6 hours starting at 00z
-        # update_freq = '6h'
-        # # round down to last actual initialization time
-        # date = init_date.floor(update_freq)
-        date = init_date  # no floor for now, user must enter correct time
+        update_freq = '6h'
+        # round down to last actual initialization time
+        date = init_date.floor(update_freq)
 
-        # # offset in hours between selected init_date and fcast run
-        # init_offset = int((init_date - date).total_seconds()/3600)
-        # lead_time_hours = lead_time_hours + init_offset
+        # offset in hours between selected init_date and fcast run
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_to_start = lead_time_to_start + init_offset
+
+        # maximum forecast horizon, update with new lead time
+        fxx_max = run_length + lead_time_to_start
 
         # set forecast lead times
         if fxx_max > 120:
-            fxx_range = [*range(lead_time_hours, 120+1, 1),
+            fxx_range = [*range(lead_time_to_start, 120+1, 1),
                          *range(123, fxx_max + 1, 3)]
         else:
-            fxx_range = range(lead_time_hours, fxx_max, 1)
+            fxx_range = range(lead_time_to_start, fxx_max, 1)
 
         # Herbie inputs
         product = 'pgrb2.0p25'
@@ -43,6 +84,12 @@ def model_input_formatting(init_date, fxx_max, length_hours,
         # Product "scda" runs 06z, 18z, 0h to 90h by 3h
         # **BUT**, see https://github.com/blaylockbk/Herbie/discussions/421
         # Starting 2024-11-12 06:00, 'scda' runs to 144h by 3h
+
+        # round to last 6 hours to start
+        date = init_date.floor('6h')
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_to_start = lead_time_to_start + init_offset
+        fxx_max = run_length + lead_time_to_start
 
         # pick init time based on forecast max lead time:
         # check if 'scda' product is ideal
@@ -68,21 +115,21 @@ def model_input_formatting(init_date, fxx_max, length_hours,
 
         # offset in hours between selected init_date and fcast run
         init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_hours = lead_time_hours + init_offset
-        if lead_time_hours > 141:
-            length_hours = max(length_hours, 6)  # make sure it's long enough
-        fxx_max = length_hours + lead_time_hours  # update this
+        lead_time_to_start = lead_time_to_start + init_offset
+        if lead_time_to_start > 141:
+            run_length = max(run_length, 6)  # make sure it's long enough
+        fxx_max = run_length + lead_time_to_start  # update this
 
         # set forecast intervals
-        if lead_time_hours <= 144 and fxx_max > 144:
+        if lead_time_to_start <= 144 and fxx_max > 144:
             # make sure it goes to at least the next interval
             fxx_max = max(fxx_max, 150)
-            fxx_range = [*range(lead_time_hours, 145, 3),
+            fxx_range = [*range(lead_time_to_start, 145, 3),
                          *range(150, fxx_max + 1, 6)]
-        elif lead_time_hours > 144:
-            fxx_range = range(lead_time_hours, fxx_max + 1, 6)
+        elif lead_time_to_start > 144:
+            fxx_range = range(lead_time_to_start, fxx_max + 1, 6)
         else:
-            fxx_range = range(lead_time_hours, fxx_max + 1, 3)
+            fxx_range = range(lead_time_to_start, fxx_max + 1, 3)
 
         # Herbie inputs
         if date.hour == 6 or date.hour == 18:
@@ -92,6 +139,8 @@ def model_input_formatting(init_date, fxx_max, length_hours,
         search_str = ':ssrd|10[uv]|2t:sfc'
 
     elif model == 'hrrr':
+        # maximum forecast horizon
+        fxx_max = run_length + lead_time_to_start
         product = 'sfc'
         search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
         update_freq = '1h'
@@ -99,13 +148,13 @@ def model_input_formatting(init_date, fxx_max, length_hours,
         # round down to last actual initialization time
         date = init_date.floor(update_freq)
 
-        fxx_range = range(lead_time_hours, fxx_max, 1)
+        fxx_range = range(lead_time_to_start, fxx_max, 1)
 
     return date, fxx_range, product, search_str
 
 
-def get_solar_forecast(latitude, longitude, init_date, length_hours,
-                       lead_time_hours=0, model='gfs', attempts=2,
+def get_solar_forecast(latitude, longitude, init_date, run_length,
+                       lead_time_to_start=0, model='gfs', attempts=2,
                        hrrr_hour_middle=True, hrrr_coursen_window=None):
     """
     Get a solar resource forecast for a single site from one of several
@@ -124,16 +173,16 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
     init_date : pandas-parsable datetime
         Model initialization datetime.
 
-    length_hours : int
+    run_length : int
         Length of the forecast in hours - number of hours forecasted
 
-    lead_time_hours : int, optional
+    lead_time_to_start : int, optional
         Number of hours between init_date (initialization) and
         the first forecasted interval. NOAA GFS data goes out
-        384 hours, so length_hours + lead_time_hours must be less
+        384 hours, so run_length + lead_time_to_start must be less
         than or equal to 384.
 
-    model : String, default 'gfs'
+    model : string, default 'gfs'
         Forecast model. Default is NOAA GFS ('gfs'), but can also be
         ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
 
@@ -182,12 +231,9 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
     # convert init_date to datetime
     init_date = pd.to_datetime(init_date)
 
-    # maximum forecast horizon
-    fxx_max = length_hours + lead_time_hours
-
     # get model-specific Herbie inputs
-    date, fxx_range, product, search_str = model_input_formatting(
-        init_date, fxx_max, length_hours, lead_time_hours, model)
+    date, fxx_range, product, search_str = _model_input_formatter(
+        init_date, run_length, lead_time_to_start, model)
 
     i = []
     for fxx in fxx_range:
@@ -289,7 +335,7 @@ def get_solar_forecast(latitude, longitude, init_date, length_hours,
             mixed['int_len'] = mixed.index.diff().total_seconds().values / 3600
 
             # set the first interval length:
-            if lead_time_hours >= 120:
+            if lead_time_to_start >= 120:
                 mixed.loc[mixed.index[0], 'int_len'] = 1
             else:
                 mixed.loc[mixed.index[0], 'int_len'] = 3
