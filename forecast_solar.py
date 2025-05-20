@@ -505,7 +505,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
     Get a solar resource forecast for a single site from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_. This version
     uses FastHerbie and may be about 15% faster. It currently only works
-    with a single init_date, not a list of dates like FastHerbie can use. 
+    with a single init_date, not a list of dates like FastHerbie can use.
 
     Parameters
     ----------
@@ -640,7 +640,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
     # rename 'ssrd' to 'sdswrf' in ifs
     if model == 'ifs':
         df_temp = i[-1].to_dataframe()[['valid_time', 'ssrd', 't2m', 'si10']]
-        df_temp = df_temp.rename({'ssrd': 'sdswrf'})
+        df_temp = df_temp.rename(columns={'ssrd': 'sdswrf'})
     else:
         df_temp = i[-1].to_dataframe()[['valid_time', 'sdswrf', 't2m', 'si10']]
 
