@@ -157,7 +157,7 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                        lead_time_to_start=0, model='gfs', attempts=2,
                        hrrr_hour_middle=True, hrrr_coursen_window=None):
     """
-    Get a solar resource forecast for a single site from one of several
+    Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
 
     Parameters
@@ -502,7 +502,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
                             lead_time_to_start=0, model='gfs', attempts=2,
                             hrrr_hour_middle=True, hrrr_coursen_window=None):
     """
-    Get a solar resource forecast for a single site from one of several
+    Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_. This version
     uses FastHerbie and may be about 15% faster. It currently only works
     with a single init_date, not a list of dates like FastHerbie can use.
