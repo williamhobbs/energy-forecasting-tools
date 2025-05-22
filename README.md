@@ -4,6 +4,8 @@ This repository is a place for some energy forecasting tools. It currently just 
 
 Look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
 
+There is also a basic solar ensemble forecast demonstrated in [ensemble_example.ipynb](ensemble_example.ipynb).
+
 Solar forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
 
 ## Quick example
