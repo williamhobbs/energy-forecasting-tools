@@ -64,9 +64,14 @@ def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
         fxx_max = run_length + lead_time_to_start
 
         # set forecast lead times
-        if fxx_max > 120:
+        if lead_time_to_start <= 120 and fxx_max > 120:
+            fxx_max = round(fxx_max/3)*3
             fxx_range = [*range(lead_time_to_start, 120+1, 1),
                          *range(123, fxx_max + 1, 3)]
+        elif lead_time_to_start > 120:
+            fxx_max = round(fxx_max/3)*3
+            lead_time_to_start = round(lead_time_to_start/3)*3
+            fxx_range = range(lead_time_to_start, fxx_max, 3)
         else:
             fxx_range = range(lead_time_to_start, fxx_max, 1)
 
@@ -122,13 +127,19 @@ def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
 
         # set forecast intervals
         if lead_time_to_start <= 144 and fxx_max > 144:
+            lead_time_to_start = round(lead_time_to_start/3)*3
+            fxx_max = round(fxx_max/6)*6
             # make sure it goes to at least the next interval
             fxx_max = max(fxx_max, 150)
             fxx_range = [*range(lead_time_to_start, 145, 3),
                          *range(150, fxx_max + 1, 6)]
         elif lead_time_to_start > 144:
+            lead_time_to_start = round(lead_time_to_start/6)*6
+            fxx_max = round(fxx_max/6)*6
             fxx_range = range(lead_time_to_start, fxx_max + 1, 6)
         else:
+            lead_time_to_start = round(lead_time_to_start/3)*3
+            fxx_max = round(fxx_max/3)*3
             fxx_range = range(lead_time_to_start, fxx_max + 1, 3)
 
         # Herbie inputs
