@@ -1302,7 +1302,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                                 model='ifs',
                                 product='enfo',
                                 fxx=fxx_range)
-                FH.download(search_str, ovewrite=True)
+                FH.download(search_str, overwrite=True)
                 ds = FH.xarray(search_str, remove_grib=False)
         except Exception:
             if attempts_remaining:
@@ -1461,7 +1461,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                                 model='ifs',
                                 product='enfo',
                                 fxx=fxx_range)
-                FH.download(search_str, ovewrite=True)
+                FH.download(search_str, overwrite=True)
                 ds = FH.xarray(search_str, remove_grib=False)
         except Exception:
             if attempts_remaining:
