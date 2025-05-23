@@ -943,9 +943,6 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
 
     dfs = []
 
-    # set clear sky model. could be an input variable at some point
-    model_cs = 'haurwitz'
-
     # loop through IFS ensemble members and get GHI data
     for number in range(1, num_members+1):
         search_str = ':ssrd:sfc:' + str(number) + ':'
