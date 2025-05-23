@@ -924,9 +924,11 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
     init_date = pd.to_datetime(init_date)
 
     num_sites = len(latitude)
-    fxx_range = range(lead_time_to_start,
-                      run_length + lead_time_to_start + 1,
-                      6)
+
+    # get model-specific Herbie inputs, except product and search string,
+    # which are unique for the ensemble
+    init_date, fxx_range, _, _ = _model_input_formatter(
+        init_date, run_length, lead_time_to_start, model)
 
     dfs = []
 
