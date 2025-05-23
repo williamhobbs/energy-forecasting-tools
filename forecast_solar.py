@@ -1203,7 +1203,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
     """
     Get solar resource forecasts for one or several sites using all ensemble
     members. Using `get_solar_forecast_ensemble_subset` may be fast for a
-    small subset of ensemble members, e.g., much less that 25% of members. 
+    small subset of ensemble members, e.g., much less that 25% of members.
     This function uses Herbie's FastHerbie [1]_ and pvlib [2]_. It currently
     only works with a single init_date, not a list of dates like FastHerbie
     can use. Temperature data comes from the ensemble mean, and wind speed is
@@ -1288,18 +1288,22 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
         try:
             if attempt_num == 1:
                 # try downloading
-                ds = FastHerbie(DATES=[init_date],
+                FH = FastHerbie(DATES=[init_date],
                                 model='ifs',
                                 product='enfo',
-                                fxx=fxx_range).xarray(search_str)
+                                fxx=fxx_range)
+                FH.download(search_str)
+                ds = FH.xarray(search_str, remove_grib=False)
             else:
                 # after first attempt, set overwrite=True to overwrite
                 # partial files
-                ds = FastHerbie(DATES=[init_date],
+                # try downloading
+                FH = FastHerbie(DATES=[init_date],
                                 model='ifs',
                                 product='enfo',
-                                fxx=fxx_range).xarray(search_str,
-                                                      overwrite=True)
+                                fxx=fxx_range)
+                FH.download(search_str, ovewrite=True)
+                ds = FH.xarray(search_str, remove_grib=False)
         except Exception:
             if attempts_remaining:
                 print('attempt ' + str(attempt_num) + ' failed, pause for '
@@ -1444,18 +1448,21 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
         try:
             if attempt_num == 1:
                 # try downloading
-                ds = FastHerbie(DATES=[init_date],
+                FH = FastHerbie(DATES=[init_date],
                                 model='ifs',
                                 product='enfo',
-                                fxx=fxx_range).xarray(search_str)
+                                fxx=fxx_range)
+                FH.download(search_str)
+                ds = FH.xarray(search_str, remove_grib=False)
             else:
                 # after first attempt, set overwrite=True to overwrite
                 # partial files
-                ds = FastHerbie(DATES=[init_date],
+                FH = FastHerbie(DATES=[init_date],
                                 model='ifs',
                                 product='enfo',
-                                fxx=fxx_range).xarray(search_str,
-                                                      overwrite=True)
+                                fxx=fxx_range)
+                FH.download(search_str, ovewrite=True)
+                ds = FH.xarray(search_str, remove_grib=False)
         except Exception:
             if attempts_remaining:
                 print('attempt ' + str(attempt_num) + ' failed, pause for '
