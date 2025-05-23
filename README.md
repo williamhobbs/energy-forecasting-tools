@@ -1,6 +1,6 @@
 # energy-forecasting-tools
 
-This repository is a place for some energy forecasting tools. It currently just includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
+This repository is a place for some energy forecasting tools. It currently only includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
 
 Look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
 
@@ -10,7 +10,7 @@ Solar forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (ope
 
 ## Quick example
 
-Here's a quick example of just getting a resource data forecast:
+Here's a quick example of getting a resource data forecast:
 
 ```python
 from forecast_solar import get_solar_forecast
@@ -41,7 +41,7 @@ Using miniforge:
 conda create --name energy_forecasting_env python=3.12 -y
 conda activate energy_forecasting_env
 conda install -c conda-forge herbie-data -y
-pip install pvlib ipykernel
+pip install pvlib ipykernel jupyter
 ```
 
 Then get a copy of `pv_model.py` from https://github.com/williamhobbs/pv-system-model and place it in the same folder as scripts you want to run. 
