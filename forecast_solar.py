@@ -29,7 +29,7 @@ def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
         Number of hours from the init_date to the first interval in the
         forecast.
 
-    model : {'gfs', 'ifs', 'hrrr'}
+    model : {'gfs', 'ifs', 'aifs', 'hrrr'}
         Forecast model name, case insensitive. Default is 'gfs'.
 
     Returns
@@ -147,6 +147,35 @@ def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
             product = 'scda'
         else:
             product = 'oper'
+        search_str = ':ssrd|10[uv]|2t:sfc'
+
+    elif model == 'aifs':
+        # From https://www.ecmwf.int/en/forecasts/datasets/set-ix, https://www.ecmwf.int/en/forecasts/dataset/set-x
+        # 4 forecast runs per day (00/06/12/18) 
+        # 6 hourly steps to 360 (15 days)
+
+        # round to last 6 hours to start
+        date = init_date.floor('6h')
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_to_start = lead_time_to_start + init_offset
+        fxx_max = run_length + lead_time_to_start
+       
+        update_freq = '6h'
+        # round down to last actual initialization time
+        date = init_date.floor(update_freq)
+
+        # offset in hours between selected init_date and fcast run
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_to_start = lead_time_to_start + init_offset
+        if lead_time_to_start > 141:
+            run_length = max(run_length, 6)  # make sure it's long enough
+        fxx_max = run_length + lead_time_to_start  # update this
+
+        # set forecast intervals
+        fxx_range = range(lead_time_to_start, fxx_max + 1, 6)
+
+        # Herbie inputs
+        product = 'enfo' # just the ensemble for now
         search_str = ':ssrd|10[uv]|2t:sfc'
 
     elif model == 'hrrr':
@@ -1230,8 +1259,8 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
         the first forecasted interval.
 
     model : string, default 'ifs'
-        Forecast model. Default and only option is ECMWF IFS ('ifs'). NOAA
-        GEFS may be added in the future.
+        Forecast model. Can be ECMWF IFS ('ifs') or AIFS ('aifs'). Default is
+        'ifs'. NOAA GEFS may be added in the future.
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
@@ -1258,8 +1287,11 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
     model_cs = 'haurwitz'
 
     # check model
-    if model.casefold() != ('ifs').casefold():
-        raise ValueError('model must be ifs, you entered ' + model)
+    if (
+        model.casefold() != ('ifs').casefold() and 
+        model.casefold() != ('aifs').casefold()
+    ):
+        raise ValueError('model must be ifs or aifs, you entered ' + model)
 
     # variable formatting
     # if lat, lon are single values, convert to lists for pickpoints later
@@ -1289,7 +1321,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
             if attempt_num == 1:
                 # try downloading
                 FH = FastHerbie(DATES=[init_date],
-                                model='ifs',
+                                model=model,
                                 product='enfo',
                                 fxx=fxx_range)
                 FH.download(search_str)
@@ -1299,7 +1331,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                 # partial files
                 # try downloading
                 FH = FastHerbie(DATES=[init_date],
-                                model='ifs',
+                                model=model,
                                 product='enfo',
                                 fxx=fxx_range)
                 FH.download(search_str, overwrite=True)
