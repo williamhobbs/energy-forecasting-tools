@@ -22,8 +22,8 @@ resource_data = get_solar_forecast(
     latitude,
     longitude,
     init_date,
-    length_hours=18, # 18 hours are included in the forecast
-    lead_time_hours=3, # forecast starts 3 hours out from the init_date
+    run_length=18, # 18 hours are included in the forecast
+    lead_time_to_start=3, # forecast starts 3 hours out from the init_date
     model='hrrr', # use NOAA HRRR
 )
 resource_data[
