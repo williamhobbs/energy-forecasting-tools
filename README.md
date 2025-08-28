@@ -1,14 +1,16 @@
 # energy-forecasting-tools
 
-This repository is a place for some energy forecasting tools. It currently only includes solar-related tools, but may expand to include wind and (maybe one day) electric load.
+This repository is a place for some energy forecasting tools. It currently includes solar and wind tools, but may expand one day to include electric load. The wind tools are not as developed at the solar tools.
 
-Look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
+For solar, look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
 
 There is also a basic solar ensemble forecast demonstrated in [ensemble_example.ipynb](ensemble_example.ipynb).
 
-Solar forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
+For wind, look at the notebook [wind_example.ipynb](wind_example.ipynb).
 
-## Quick example
+Forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
+
+## Quick examples
 
 Here's a quick example of getting a resource data forecast:
 
@@ -34,6 +36,32 @@ resource_data[
 with this output:
 
 <img src="images/output.png" width="500"/>
+
+Here's a wind resource forecast:
+
+```python
+from forecast_wind import get_wind_forecast
+
+latitude = 33.5
+longitude = -86.8
+init_date = '2024-06-05 6:00' # datetime the forecast model was initialized
+resource_data = get_wind_forecast(
+    latitude,
+    longitude,
+    init_date,
+    run_length=18, # 18 hours are included in the forecast
+    lead_time_to_start=3, # forecast starts 3 hours out from the init_date
+    model='gfs', # use NOAA GFS
+)
+resource_data[
+    ['wind_speed_10m', 'wind_speed_80m',
+    'wind_speed_100m', 'temp_air_2m', 
+    'pressure_0m']
+    ].plot(secondary_y=['pressure_0m'], drawstyle='steps-mid')
+```
+with this output (note that pressure is on the secondary y-axis):
+
+<img src="images/output_wind.png" width="500"/>
 
 ## Suggested environment setup:
 Using miniforge:
