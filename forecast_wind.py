@@ -211,6 +211,7 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
                 .interpolate()
                 .resample('60min').mean()
             )
+            df_60min.index = df_60min.index + pd.Timedelta('30min')
             dfs[j] = df_60min
 
     # concatenate creating multiindex with keys of the list of point numbers
