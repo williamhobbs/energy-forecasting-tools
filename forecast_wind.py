@@ -199,15 +199,19 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
         df = df_temp[df_temp.index.get_level_values('point') == j]
         df = df.droplevel('point')
 
-        # 60min version of data, centered at bottom of the hour
-        # 1min interpolation, then 60min mean
-        df_60min = (
-            df
-            .resample('1min')
-            .interpolate()
-            .resample('60min').mean()
-        )
-        dfs[j] = df_60min
+        if model == 'hrrr' and hrrr_hour_middle is False:
+            # keep top of hour instantaneous HRRR convention
+            dfs[j] = df
+        else:
+            # 60min version of data, centered at bottom of the hour
+            # 1min interpolation, then 60min mean
+            df_60min = (
+                df
+                .resample('1min')
+                .interpolate()
+                .resample('60min').mean()
+            )
+            dfs[j] = df_60min
 
     # concatenate creating multiindex with keys of the list of point numbers
     # assigned to 'point', reorder indices, and sort by valid_time
