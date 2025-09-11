@@ -24,7 +24,7 @@ def model_input_formatter(init_date, run_length, lead_time_to_start=0,
         Number of hours from the init_date to the first interval in the
         forecast.
 
-    model : {'gfs', 'ifs', 'aifs', 'hrrr', 'gefs}
+    model : {'gfs', 'ifs', 'aifs', 'hrrr', 'gefs'}
         Forecast model name, case insensitive. Default is 'gfs'.
 
     resource_type : {'solar, 'wind'}
