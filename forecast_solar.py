@@ -4,198 +4,13 @@ import xarray as xr
 from herbie import Herbie, FastHerbie
 import pvlib
 import time
-import warnings
-
-
-def _model_input_formatter(init_date, run_length, lead_time_to_start=0,
-                           model='gfs'):
-    """
-    Helper function to format model-specific inputs for Herbie.
-
-    In the case where the user selects an invalid intitialization date, or
-    combination of init date and lead time, it tries to update the init date
-    and lead time to match a valid init date for the selected model, but this
-    hasn't been fully tested.
-
-    Parameters
-    ----------
-    init_date : pandas-parsable datetime
-        Targetted initialization datetime.
-
-    run_length : int
-        Length of the forecast in hours.
-
-    lead_time_to_start : int
-        Number of hours from the init_date to the first interval in the
-        forecast.
-
-    model : {'gfs', 'ifs', 'aifs', 'hrrr'}
-        Forecast model name, case insensitive. Default is 'gfs'.
-
-    Returns
-    -------
-    date : pandas-parsable datetime
-        initialization date, rounded down to the last valid date for the given
-        model if needed.
-
-    fxx_range : int or list of ints
-        fxx (lead time) values.
-
-    product : string
-        model product, e.g., 'pgrb2.0p25' for 'gfs'
-
-    search_str : string
-        wgrib2-style search string for Herbie to select variables of interest.
-    """
-
-    if model == 'gfs':
-        # GFS:
-        # 0 to 120 by 1, 123 to 384 by 3
-        # runs every 6 hours starting at 00z
-        update_freq = '6h'
-        # round down to last actual initialization time
-        date = init_date.floor(update_freq)
-
-        # offset in hours between selected init_date and fcast run
-        init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_to_start = lead_time_to_start + init_offset
-
-        # maximum forecast horizon, update with new lead time
-        fxx_max = run_length + lead_time_to_start
-
-        # set forecast lead times
-        if lead_time_to_start <= 120 and fxx_max > 120:
-            fxx_max = round(fxx_max/3)*3
-            fxx_range = [*range(lead_time_to_start, 120+1, 1),
-                         *range(123, fxx_max + 1, 3)]
-        elif lead_time_to_start > 120:
-            fxx_max = round(fxx_max/3)*3
-            lead_time_to_start = round(lead_time_to_start/3)*3
-            fxx_range = range(lead_time_to_start, fxx_max, 3)
-        else:
-            fxx_range = range(lead_time_to_start, fxx_max, 1)
-
-        # Herbie inputs
-        product = 'pgrb2.0p25'
-        search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
-
-    elif model == 'ifs':
-        # From https://www.ecmwf.int/en/forecasts/datasets/open-data
-        # For times 00z &12z: 0 to 144 by 3, 150 to 240 by 6.
-        # For times 06z & 18z: 0 to 90 by 3.
-        # From:
-        # https://confluence.ecmwf.int/display/DAC/ECMWF+open+data%3A+real-time+forecasts+from+IFS+and+AIFS
-        # Product "oper" runs 00z, 12z, 0h to 144h by 3h, 144h to 240h by 6h
-        # Product "scda" runs 06z, 18z, 0h to 90h by 3h
-        # **BUT**, see https://github.com/blaylockbk/Herbie/discussions/421
-        # Starting 2024-11-12 06:00, 'scda' runs to 144h by 3h
-
-        # round to last 6 hours to start
-        date = init_date.floor('6h')
-        init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_to_start = lead_time_to_start + init_offset
-        fxx_max = run_length + lead_time_to_start
-
-        # pick init time based on forecast max lead time:
-        # check if 'scda' product is ideal
-        if init_date.hour == 6 or init_date.hour == 18:
-            if init_date >= pd.to_datetime('2024-11-12 06:00'):
-                scda_fxx_max = 144
-            else:
-                scda_fxx_max = 90
-            if fxx_max > scda_fxx_max:  # forecast beyond scda
-                update_freq = '12h'  # must use 'oper' runs
-                warnings.warn(
-                    ("You have specified an init_date which would have mapped "
-                     "to a 06z or 18z. Those runs the IFS 'scda' product, and "
-                     "'scda' only goes out 144 hours (90h prior to 2024-11-12)"
-                     ". You will get forecasts from the 'oper' run 6 hours "
-                     "earlier, instead."))
-            else:
-                update_freq = '6h'  # can use 'oper' or 'scda'
-        else:
-            update_freq = '6h'  # can use 'oper' or 'scda'
-        # round down to last actual initialization time
-        date = init_date.floor(update_freq)
-
-        # offset in hours between selected init_date and fcast run
-        init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_to_start = lead_time_to_start + init_offset
-        if lead_time_to_start > 141:
-            run_length = max(run_length, 6)  # make sure it's long enough
-        fxx_max = run_length + lead_time_to_start  # update this
-
-        # set forecast intervals
-        if lead_time_to_start <= 144 and fxx_max > 144:
-            lead_time_to_start = round(lead_time_to_start/3)*3
-            fxx_max = round(fxx_max/6)*6
-            # make sure it goes to at least the next interval
-            fxx_max = max(fxx_max, 150)
-            fxx_range = [*range(lead_time_to_start, 145, 3),
-                         *range(150, fxx_max + 1, 6)]
-        elif lead_time_to_start > 144:
-            lead_time_to_start = round(lead_time_to_start/6)*6
-            fxx_max = round(fxx_max/6)*6
-            fxx_range = range(lead_time_to_start, fxx_max + 1, 6)
-        else:
-            lead_time_to_start = round(lead_time_to_start/3)*3
-            fxx_max = round(fxx_max/3)*3
-            fxx_range = range(lead_time_to_start, fxx_max + 1, 3)
-
-        # Herbie inputs
-        if date.hour == 6 or date.hour == 18:
-            product = 'scda'
-        else:
-            product = 'oper'
-        search_str = ':ssrd|10[uv]|2t:sfc'
-
-    elif model == 'aifs':
-        # From https://www.ecmwf.int/en/forecasts/datasets/set-ix, https://www.ecmwf.int/en/forecasts/dataset/set-x
-        # 4 forecast runs per day (00/06/12/18) 
-        # 6 hourly steps to 360 (15 days)
-
-        # round to last 6 hours to start
-        date = init_date.floor('6h')
-        init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_to_start = lead_time_to_start + init_offset
-        fxx_max = run_length + lead_time_to_start
-       
-        update_freq = '6h'
-        # round down to last actual initialization time
-        date = init_date.floor(update_freq)
-
-        # offset in hours between selected init_date and fcast run
-        init_offset = int((init_date - date).total_seconds()/3600)
-        lead_time_to_start = lead_time_to_start + init_offset
-        if lead_time_to_start > 141:
-            run_length = max(run_length, 6)  # make sure it's long enough
-        fxx_max = run_length + lead_time_to_start  # update this
-
-        # set forecast intervals
-        fxx_range = range(lead_time_to_start, fxx_max + 1, 6)
-
-        # Herbie inputs
-        product = 'enfo' # just the ensemble for now
-        search_str = ':ssrd|10[uv]|2t:sfc'
-
-    elif model == 'hrrr':
-        # maximum forecast horizon
-        fxx_max = run_length + lead_time_to_start
-        product = 'sfc'
-        search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
-        update_freq = '1h'
-
-        # round down to last actual initialization time
-        date = init_date.floor(update_freq)
-
-        fxx_range = range(lead_time_to_start, fxx_max, 1)
-
-    return date, fxx_range, product, search_str
+from eft_utilities import model_input_formatter
 
 
 def get_solar_forecast(latitude, longitude, init_date, run_length,
-                       lead_time_to_start=0, model='gfs', attempts=2,
-                       hrrr_hour_middle=True, hrrr_coursen_window=None):
+                       lead_time_to_start=0, model='gfs', member=None,
+                       attempts=2, hrrr_hour_middle=True,
+                       hrrr_coursen_window=None):
     """
     Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -224,7 +39,10 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
 
     model : string, default 'gfs'
         Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
+        ECMWF IFS ('ifs'), NOAA HRRR ('hrrr'), or NOAA GEFS ('gefs).
+
+    member: string or int
+        For models that are ensembles, pass an appropriate single member label.
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
@@ -272,7 +90,7 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
     init_date = pd.to_datetime(init_date)
 
     # get model-specific Herbie inputs
-    date, fxx_range, product, search_str = _model_input_formatter(
+    date, fxx_range, product, search_str = model_input_formatter(
         init_date, run_length, lead_time_to_start, model)
 
     i = []
@@ -289,7 +107,8 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                         date,
                         model=model,
                         product=product,
-                        fxx=fxx
+                        fxx=fxx,
+                        member=member
                         ).xarray(search_str)
                 else:
                     # after first attempt, set overwrite=True to overwrite
@@ -298,7 +117,8 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                         date,
                         model=model,
                         product=product,
-                        fxx=fxx
+                        fxx=fxx,
+                        member=member
                         ).xarray(search_str, overwrite=True)
             except Exception:
                 if attempts_remaining:
@@ -383,6 +203,27 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                         - (mixed['hour_of_mixed_period'] - mixed['int_len'])
                         * mixed['sdswrf_prev']) / mixed['int_len'])
             df['ghi'] = unmixed
+
+        elif model == 'gefs':
+            # for gfs ghi: we have to "unmix" the rolling average irradiance
+            # that resets every 6 hours
+            mixed = df[['sdswrf']].copy()
+            mixed['hour'] = mixed.index.hour
+            mixed['hour'] = mixed.index.hour
+            mixed['hour_of_mixed_period'] = ((mixed['hour'] - 1) % 6) + 1
+            mixed['sdswrf_prev'] = mixed['sdswrf'].shift(
+                periods=1,
+                fill_value=0
+                )
+            mixed['int_len'] = mixed.index.diff().total_seconds().values / 3600
+
+            # set the first interval length:
+            mixed.loc[mixed.index[0], 'int_len'] = 3
+            unmixed = ((mixed['hour_of_mixed_period'] * mixed['sdswrf']
+                        - (mixed['hour_of_mixed_period'] - mixed['int_len'])
+                        * mixed['sdswrf_prev']) / mixed['int_len'])
+            df['ghi'] = unmixed
+
         elif model == 'ifs':
             # for ifs ghi: cumulative J/m^s to average W/m^2 over the interval
             # ending at the valid time. calculate difference in measurement
@@ -392,7 +233,7 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
         elif model == 'hrrr':
             df['ghi'] = df['sdswrf']
 
-        if model == 'gfs' or model == 'ifs':
+        if model == 'gfs' or model == 'gefs' or model == 'ifs':
             # make 1min interval clear sky data covering our time range
             times = pd.date_range(
                 start=df.index[0],
@@ -539,8 +380,9 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
 
 
 def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
-                            lead_time_to_start=0, model='gfs', attempts=2,
-                            hrrr_hour_middle=True, hrrr_coursen_window=None):
+                            lead_time_to_start=0, model='gfs', member=None,
+                            attempts=2, hrrr_hour_middle=True,
+                            hrrr_coursen_window=None):
     """
     Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_. This version
@@ -571,7 +413,10 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
 
     model : string, default 'gfs'
         Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
+        ECMWF IFS ('ifs'), NOAA HRRR ('hrrr'), or NOAA GEFS ('gefs).
+
+    member: string or int
+        For models that are ensembles, pass an appropriate single member label.
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
@@ -619,7 +464,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
     init_date = pd.to_datetime(init_date)
 
     # get model-specific Herbie inputs
-    date, fxx_range, product, search_str = _model_input_formatter(
+    date, fxx_range, product, search_str = model_input_formatter(
         init_date, run_length, lead_time_to_start, model)
 
     delimiter = '|'
@@ -627,7 +472,8 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
 
     i = []
     ds_dict = {}
-    FH = FastHerbie([date], model=model, product=product, fxx=fxx_range)
+    FH = FastHerbie([date], model=model, product=product, fxx=fxx_range,
+                    member=member)
     for j in range(0, len(search_string_list)):
         # get solar, 10m wind, and 2m temp data
         # try n times based loosely on
@@ -637,11 +483,13 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
             try:
                 if attempt_num == 1:
                     # try downloading
+                    FH.download(search_string_list[j])
                     ds_dict[j] = FH.xarray(search_string_list[j],
                                            remove_grib=True)
                 else:
                     # after first attempt, set overwrite=True to overwrite
                     # partial files
+                    FH.download(search_string_list[j])
                     ds_dict[j] = FH.xarray(search_string_list[j],
                                            remove_grib=True,
                                            overwrite=True)
@@ -734,6 +582,27 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
                         - (mixed['hour_of_mixed_period'] - mixed['int_len'])
                         * mixed['sdswrf_prev']) / mixed['int_len'])
             df['ghi'] = unmixed
+
+        elif model == 'gefs':
+            # for gfs ghi: we have to "unmix" the rolling average irradiance
+            # that resets every 6 hours
+            mixed = df[['sdswrf']].copy()
+            mixed['hour'] = mixed.index.hour
+            mixed['hour'] = mixed.index.hour
+            mixed['hour_of_mixed_period'] = ((mixed['hour'] - 1) % 6) + 1
+            mixed['sdswrf_prev'] = mixed['sdswrf'].shift(
+                periods=1,
+                fill_value=0
+                )
+            mixed['int_len'] = mixed.index.diff().total_seconds().values / 3600
+
+            # set the first interval length:
+            mixed.loc[mixed.index[0], 'int_len'] = 3
+            unmixed = ((mixed['hour_of_mixed_period'] * mixed['sdswrf']
+                        - (mixed['hour_of_mixed_period'] - mixed['int_len'])
+                        * mixed['sdswrf_prev']) / mixed['int_len'])
+            df['ghi'] = unmixed
+
         elif model == 'ifs':
             # for ifs ghi: cumulative J/m^s to average W/m^2 over the interval
             # ending at the valid time. calculate difference in measurement
@@ -743,7 +612,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
         elif model == 'hrrr':
             df['ghi'] = df['sdswrf']
 
-        if model == 'gfs' or model == 'ifs':
+        if model == 'gfs' or model == 'gefs' or model == 'ifs':
             # make 1min interval clear sky data covering our time range
             times = pd.date_range(
                 start=df.index[0],
@@ -968,7 +837,7 @@ def get_solar_forecast_ensemble_subset(
 
     # get model-specific Herbie inputs, except product and search string,
     # which are unique for the ensemble
-    init_date, fxx_range, _, _ = _model_input_formatter(
+    init_date, fxx_range, _, _ = model_input_formatter(
         init_date, run_length, lead_time_to_start, model)
 
     dfs = []
@@ -1259,8 +1128,8 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
         the first forecasted interval.
 
     model : string, default 'ifs'
-        Forecast model. Can be ECMWF IFS ('ifs') or AIFS ('aifs'). Default is
-        'ifs'. NOAA GEFS may be added in the future.
+        Forecast model. Can be ECMWF IFS ('ifs'), ECMWF AIFS ('aifs'), or NOAA
+        GEFS ('gefs').
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
@@ -1288,7 +1157,7 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
 
     # check model
     if (
-        model.casefold() != ('ifs').casefold() and 
+        model.casefold() != ('ifs').casefold() and
         model.casefold() != ('aifs').casefold()
     ):
         raise ValueError('model must be ifs or aifs, you entered ' + model)
@@ -1305,270 +1174,569 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
 
     # get model-specific Herbie inputs, except product and search string,
     # which are unique for the ensemble
-    init_date, fxx_range, _, _ = _model_input_formatter(
+    init_date, fxx_range, product, search_str = model_input_formatter(
         init_date, run_length, lead_time_to_start, model)
 
-    # get GHI data for all IFS ensemble members (not the mean)
-    # search for ":ssrd:sfc:" and NOT ":ssrd:sfc:g"
-    # (the "g" is right after sfc if there is no member number)
-    # regex based on https://superuser.com/a/1335688
-    search_str = '^(?=.*:ssrd:sfc:)(?:(?!:ssrd:sfc:g).)*$'
-    # try n times based loosely on
-    # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
-    for attempts_remaining in reversed(range(attempts)):
-        attempt_num = attempts - attempts_remaining
-        try:
-            if attempt_num == 1:
-                # try downloading
-                FH = FastHerbie(DATES=[init_date],
-                                model=model,
-                                product='enfo',
-                                fxx=fxx_range)
-                FH.download(search_str)
-                ds = FH.xarray(search_str, remove_grib=False)
+    # ifs/aifs workflow
+    if model == 'ifs' or model == 'aifs':
+        # get GHI data for all IFS ensemble members (not the mean)
+        # search for ":ssrd:sfc:" and NOT ":ssrd:sfc:g"
+        # (the "g" is right after sfc if there is no member number)
+        # regex based on https://superuser.com/a/1335688
+        search_str = '^(?=.*:ssrd:sfc:)(?:(?!:ssrd:sfc:g).)*$'
+
+        # try n times based loosely on
+        # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
+        for attempts_remaining in reversed(range(attempts)):
+            attempt_num = attempts - attempts_remaining
+            try:
+                if attempt_num == 1:
+                    # try downloading
+                    FH = FastHerbie(DATES=[init_date],
+                                    model=model,
+                                    product='enfo',
+                                    fxx=fxx_range)
+                    FH.download(search_str)
+                    ds = FH.xarray(search_str, remove_grib=False)
+                else:
+                    # after first attempt, set overwrite=True to overwrite
+                    # partial files
+                    # try downloading
+                    FH = FastHerbie(DATES=[init_date],
+                                    model=model,
+                                    product='enfo',
+                                    fxx=fxx_range)
+                    FH.download(search_str, overwrite=True)
+                    ds = FH.xarray(search_str, remove_grib=False)
+            except Exception:
+                if attempts_remaining:
+                    print('attempt ' + str(attempt_num) + ' failed, pause for '
+                          + str((attempt_num)**2) + ' min')
+                    time.sleep(60*(attempt_num)**2)
             else:
-                # after first attempt, set overwrite=True to overwrite
-                # partial files
-                # try downloading
-                FH = FastHerbie(DATES=[init_date],
-                                model=model,
-                                product='enfo',
-                                fxx=fxx_range)
-                FH.download(search_str, overwrite=True)
-                ds = FH.xarray(search_str, remove_grib=False)
-        except Exception:
-            if attempts_remaining:
-                print('attempt ' + str(attempt_num) + ' failed, pause for '
-                      + str((attempt_num)**2) + ' min')
-                time.sleep(60*(attempt_num)**2)
+                break
         else:
-            break
-    else:
-        raise ValueError('download failed, ran out of attempts')
+            raise ValueError('download failed, ran out of attempts')
 
-    # use pick_points for single point or list of points
-    ds2 = ds.herbie.pick_points(pd.DataFrame({
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    }))
-    # convert to dataframe
-    df_temp = (ds2
-               .to_dataframe()
-               .reset_index()
-               .set_index('valid_time')[['number', 'point', 'ssrd', 'time']])
-    # add timezone
-    df_temp = df_temp.tz_localize('UTC', level='valid_time')
-    # rename ssrd, init_time
-    df_temp = df_temp.rename(columns={'ssrd': 'sdswrf', 'time': 'init_time'})
+        # use pick_points for single point or list of points
+        ds2 = ds.herbie.pick_points(pd.DataFrame({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        }))
+        # convert to dataframe
+        df_temp = (ds2
+                   .to_dataframe()
+                   .reset_index()
+                   .set_index('valid_time')[['number', 'point', 'ssrd',
+                                             'time']])
+        # add timezone
+        df_temp = df_temp.tz_localize('UTC', level='valid_time')
+        # rename ssrd, init_time
+        df_temp = df_temp.rename(columns={'ssrd': 'sdswrf',
+                                          'time': 'init_time'})
 
-    # work through sites (points) and members
-    if type(latitude) is float or type(latitude) is int:
-        num_sites = 1
-    else:
-        num_sites = len(latitude)
-    member_list = df_temp['number'].unique()
-    dfs = []
-    for number in member_list:
-        for point in range(num_sites):
-            df = df_temp[(df_temp['point'] == point) &
-                         (df_temp['number'] == number)].copy()
+        # work through sites (points) and members
+        if type(latitude) is float or type(latitude) is int:
+            num_sites = 1
+        else:
+            num_sites = len(latitude)
+        member_list = df_temp['number'].unique()
+        dfs = []
+        for number in member_list:
+            for point in range(num_sites):
+                df = df_temp[(df_temp['point'] == point) &
+                             (df_temp['number'] == number)].copy()
 
-            loc = pvlib.location.Location(
-                latitude=latitude[point],
-                longitude=longitude[point],
-                tz=df.index.tz
+                loc = pvlib.location.Location(
+                    latitude=latitude[point],
+                    longitude=longitude[point],
+                    tz=df.index.tz
+                    )
+
+                # convert cumulative J/m^s to average W/m^2
+                df['ghi'] = (df['sdswrf'].diff() /
+                             df.index.diff().seconds.values)
+
+                # make 1min interval clear sky data covering our time range
+                times = pd.date_range(
+                    start=df.index[0],
+                    end=df.index[-1],
+                    freq='1min',
+                    tz='UTC')
+                cs = loc.get_clearsky(times, model=model_cs)
+
+                # calculate average CS ghi over the intervals from the forecast
+                # based on list comprehension example in
+                # https://stackoverflow.com/a/55724134/27574852
+                ghi = cs['ghi']
+                dates = df.index
+                ghi_clear = [
+                    ghi.loc[(ghi.index > dates[i]) & (ghi.index <= dates[i+1])]
+                    .mean() for i in range(len(dates) - 1)
+                    ]
+
+                # write to df and calculate clear sky index of ghi
+                df['ghi_clear'] = [np.nan] + ghi_clear
+                df['ghi_csi'] = df['ghi'] / df['ghi_clear']
+
+                # avoid divide by zero issues
+                df.loc[df['ghi'] == 0, 'ghi_csi'] = 0
+
+                # make a dummy column
+                df['dummy'] = 0
+
+                # 60min version of data, centered at bottom of the hour
+                # 1min interpolation, then 60min mean
+                df_60min = (
+                    df['dummy']
+                    .resample('1min')
+                    .interpolate()
+                    .resample('60min').mean()
                 )
+                # make timestamps center-labeled for instantaneous pvlib
+                # modeling later
+                df_60min.index = df_60min.index + pd.Timedelta('30min')
+                # drop last row, since we don't have data for the last full
+                # hour (just an instantaneous end point)
+                df_60min = df_60min.iloc[:-1]
+                # "backfill" ghi csi
+                # merge based on nearest index from 60min version looking
+                # forward in 3hr version
+                df_60min = pd.merge_asof(
+                    left=df_60min,
+                    right=df[['ghi_csi', 'init_time']],
+                    on='valid_time',
+                    direction='forward'
+                ).set_index('valid_time')
 
-            # convert cumulative J/m^s to average W/m^2
-            df['ghi'] = df['sdswrf'].diff() / df.index.diff().seconds.values
+                # make 60min interval clear sky, centered at bottom of the hour
+                times = pd.date_range(
+                    start=df.index[0]+pd.Timedelta('30m'),
+                    end=df.index[-1]-pd.Timedelta('30m'),
+                    freq='60min',
+                    tz='UTC')
+                cs = loc.get_clearsky(times, model=model_cs)
 
-            # make 1min interval clear sky data covering our time range
-            times = pd.date_range(
-                start=df.index[0],
-                end=df.index[-1],
-                freq='1min',
-                tz='UTC')
-            cs = loc.get_clearsky(times, model=model_cs)
+                # calculate ghi from clear sky and backfilled forecasted clear
+                # sky index
+                df_60min['ghi'] = cs['ghi'] * df_60min['ghi_csi']
 
-            # calculate average CS ghi over the intervals from the forecast
-            # based on list comprehension example in
-            # https://stackoverflow.com/a/55724134/27574852
-            ghi = cs['ghi']
-            dates = df.index
-            ghi_clear = [
-                ghi.loc[(ghi.index > dates[i]) & (ghi.index <= dates[i+1])]
-                .mean() for i in range(len(dates) - 1)
-                ]
+                # dni and dhi using pvlib erbs. could also DIRINT or
+                # erbs-driesse
+                sp = loc.get_solarposition(times)
+                out_erbs = pvlib.irradiance.erbs(
+                    df_60min.ghi,
+                    sp.zenith,
+                    df_60min.index,
+                )
+                df_60min['dni'] = out_erbs.dni
+                df_60min['dhi'] = out_erbs.dhi
 
-            # write to df and calculate clear sky index of ghi
-            df['ghi_clear'] = [np.nan] + ghi_clear
-            df['ghi_csi'] = df['ghi'] / df['ghi_clear']
+                # add clearsky ghi
+                df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
 
-            # avoid divide by zero issues
-            df.loc[df['ghi'] == 0, 'ghi_csi'] = 0
+                # add member number and point, drop dummy column
+                df_60min['member'] = number
+                df_60min['point'] = point
+                df_60min = df_60min.drop(columns=['dummy'])
 
-            # make a dummy column
-            df['dummy'] = 0
+                # append
+                dfs.append(df_60min)
+
+        # convert to dataframe
+        df_60min_irr = pd.concat(dfs)
+
+        # get deterministic temp_air
+        search_str = ':2t:sfc:g:0001:od:cf:enfo'
+
+        # try n times based loosely on
+        # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
+        for attempts_remaining in reversed(range(attempts)):
+            attempt_num = attempts - attempts_remaining
+            try:
+                if attempt_num == 1:
+                    # try downloading
+                    FH = FastHerbie(DATES=[init_date],
+                                    model='ifs',
+                                    product='enfo',
+                                    fxx=fxx_range)
+                    FH.download(search_str)
+                    ds = FH.xarray(search_str, remove_grib=False)
+                else:
+                    # after first attempt, set overwrite=True to overwrite
+                    # partial files
+                    FH = FastHerbie(DATES=[init_date],
+                                    model='ifs',
+                                    product='enfo',
+                                    fxx=fxx_range)
+                    FH.download(search_str, overwrite=True)
+                    ds = FH.xarray(search_str, remove_grib=False)
+            except Exception:
+                if attempts_remaining:
+                    print('attempt ' + str(attempt_num) + ' failed, pause for '
+                          + str((attempt_num)**2) + ' min')
+                    time.sleep(60*(attempt_num)**2)
+            else:
+                break
+        else:
+            raise ValueError('download failed, ran out of attempts')
+
+        # use pick_points for single point or list of points
+        ds2 = ds.herbie.pick_points(pd.DataFrame({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        }))
+
+        # convert to dataframe
+        df_temp = (ds2
+                   .to_dataframe()
+                   .reset_index()
+                   .set_index('valid_time')[['point', 't2m']])
+        # add timezone
+        df_temp = df_temp.tz_localize('UTC', level='valid_time')
+
+        # convert air temperature units
+        df_temp['temp_air'] = df_temp['t2m'] - 273.15
+
+        dfs_temp_air = []
+        # work through sites (points)
+        if type(latitude) is float or type(latitude) is int:
+            num_sites = 1
+        else:
+            num_sites = len(latitude)
+        for point in range(num_sites):
+            df = df_temp[df_temp['point'] == point].copy()
 
             # 60min version of data, centered at bottom of the hour
             # 1min interpolation, then 60min mean
-            df_60min = (
-                df['dummy']
+            df_60min_temp_air = (
+                df[['temp_air']]
                 .resample('1min')
                 .interpolate()
                 .resample('60min').mean()
             )
+
             # make timestamps center-labeled for instantaneous pvlib modeling
             # later
-            df_60min.index = df_60min.index + pd.Timedelta('30min')
+            df_60min_temp_air.index = df_60min_temp_air.index + \
+                pd.Timedelta('30min')
             # drop last row, since we don't have data for the last full hour
             # (just an instantaneous end point)
-            df_60min = df_60min.iloc[:-1]
-            # "backfill" ghi csi
-            # merge based on nearest index from 60min version looking forward
-            # in 3hr version
-            df_60min = pd.merge_asof(
-                left=df_60min,
-                right=df[['ghi_csi', 'init_time']],
-                on='valid_time',
-                direction='forward'
-            ).set_index('valid_time')
+            df_60min_temp_air = df_60min_temp_air.iloc[:-1]
 
-            # make 60min interval clear sky, centered at bottom of the hour
-            times = pd.date_range(
-                start=df.index[0]+pd.Timedelta('30m'),
-                end=df.index[-1]-pd.Timedelta('30m'),
-                freq='60min',
-                tz='UTC')
-            cs = loc.get_clearsky(times, model=model_cs)
-
-            # calculate ghi from clear sky and backfilled forecasted clear sky
-            # index
-            df_60min['ghi'] = cs['ghi'] * df_60min['ghi_csi']
-
-            # dni and dhi using pvlib erbs. could also DIRINT or erbs-driesse
-            sp = loc.get_solarposition(times)
-            out_erbs = pvlib.irradiance.erbs(
-                df_60min.ghi,
-                sp.zenith,
-                df_60min.index,
-            )
-            df_60min['dni'] = out_erbs.dni
-            df_60min['dhi'] = out_erbs.dhi
-
-            # add clearsky ghi
-            df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
+            # drop unneeded columns if they exist
+            df_60min_temp_air = df_60min_temp_air.drop(['t2m'],
+                                                       axis=1,
+                                                       errors='ignore')
 
             # add member number and point, drop dummy column
-            df_60min['member'] = number
-            df_60min['point'] = point
-            df_60min = df_60min.drop(columns=['dummy'])
+            # df_60min_temp_air['member'] = pd.NA
+            df_60min_temp_air['point'] = point
 
             # append
-            dfs.append(df_60min)
+            dfs_temp_air.append(df_60min_temp_air)
 
-    # convert to dataframe
-    df_60min_irr = pd.concat(dfs)
+        # concat
+        df_60min_temp_air = pd.concat(dfs_temp_air)
 
-    # get deterministic temp_air
-    search_str = ':2t:sfc:g:0001:od:cf:enfo'
+        # final merge
+        df_60min = pd.merge(df_60min_irr,
+                            df_60min_temp_air,
+                            on=['valid_time', 'point'])
 
-    # try n times based loosely on
-    # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
-    for attempts_remaining in reversed(range(attempts)):
-        attempt_num = attempts - attempts_remaining
-        try:
-            if attempt_num == 1:
-                # try downloading
-                FH = FastHerbie(DATES=[init_date],
-                                model='ifs',
-                                product='enfo',
-                                fxx=fxx_range)
-                FH.download(search_str)
-                ds = FH.xarray(search_str, remove_grib=False)
+        # add generic wind
+        df_60min['wind_speed'] = 2
+
+    elif model == 'gefs':
+        search_str = 'DSWRF'
+        # list of GEFS ensemble members, e.g., 'p01', 'p02', etc.
+        num_members = 30
+        member_list = [f"p{x:02d}" for x in range(1, num_members+1)]
+
+        dfs = []
+        for x in range(0, num_members):
+            # try n times based loosely on
+            # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
+            for attempts_remaining in reversed(range(attempts)):
+                attempt_num = attempts - attempts_remaining
+                try:
+                    if attempt_num == 1:
+                        # try downloading
+                        FH = FastHerbie(DATES=[init_date],
+                                        model=model,
+                                        product=product,
+                                        fxx=fxx_range,
+                                        member=member_list[x])
+                        FH.download(search_str)
+                        ds = FH.xarray(search_str, remove_grib=False)
+                    else:
+                        # after first attempt, set overwrite=True to overwrite
+                        # partial files
+                        FH = FastHerbie(DATES=[init_date],
+                                        model=model,
+                                        product=product,
+                                        fxx=fxx_range,
+                                        member=member_list[x])
+                        FH.download(search_str, overwrite=True)
+                        ds = FH.xarray(search_str, remove_grib=False)
+                except Exception:
+                    if attempts_remaining:
+                        print('attempt ' + str(attempt_num) + ' failed'
+                              + ', pause for ' + str((attempt_num)**2)
+                              + ' min')
+                        time.sleep(60*(attempt_num)**2)
+                else:
+                    break
             else:
-                # after first attempt, set overwrite=True to overwrite
-                # partial files
-                FH = FastHerbie(DATES=[init_date],
-                                model='ifs',
-                                product='enfo',
-                                fxx=fxx_range)
-                FH.download(search_str, overwrite=True)
-                ds = FH.xarray(search_str, remove_grib=False)
-        except Exception:
-            if attempts_remaining:
-                print('attempt ' + str(attempt_num) + ' failed, pause for '
-                      + str((attempt_num)**2) + ' min')
-                time.sleep(60*(attempt_num)**2)
+                raise ValueError('download failed, ran out of attempts')
+
+            # use pick_points for single point or list of points
+            ds2 = ds.herbie.pick_points(pd.DataFrame({
+                            "latitude": latitude,
+                            "longitude": longitude,
+                            }))
+            # convert to dataframe
+            df_temp = (ds2
+                       .to_dataframe()
+                       .reset_index()
+                       .set_index('valid_time')[['number',
+                                                 'point',
+                                                 'sdswrf',
+                                                 'time']])
+            # add timezone
+            df_temp = df_temp.tz_localize('UTC', level='valid_time')
+            # rename init_time
+            df_temp = df_temp.rename(columns={'time': 'init_time'})
+
+            # work through sites (points) and members
+            if type(latitude) is float or type(latitude) is int:
+                num_sites = 1
+            else:
+                num_sites = len(latitude)
+
+            for point in range(num_sites):
+                df = df_temp[(df_temp['point'] == point)].copy()
+
+                loc = pvlib.location.Location(
+                    latitude=latitude[point],
+                    longitude=longitude[point],
+                    tz=df.index.tz
+                    )
+
+                # for gfs ghi: we have to "unmix" the rolling average
+                # irradiance that resets every 6 hours
+                mixed = df[['sdswrf']].copy()
+                mixed['hour'] = mixed.index.hour
+                mixed['hour'] = mixed.index.hour
+                mixed['hour_of_mixed_period'] = ((mixed['hour'] - 1) % 6) + 1
+                mixed['sdswrf_prev'] = mixed['sdswrf'].shift(
+                    periods=1,
+                    fill_value=0
+                    )
+                mixed['int_len'] = (mixed.index.diff()
+                                    .total_seconds().values) / 3600
+
+                # set the first interval length:
+                mixed.loc[mixed.index[0], 'int_len'] = 3
+                unmixed = ((mixed['hour_of_mixed_period'] * mixed['sdswrf']
+                           - (mixed['hour_of_mixed_period'] - mixed['int_len'])
+                           * mixed['sdswrf_prev']) / mixed['int_len'])
+                df['ghi'] = unmixed
+
+                # make 1min interval clear sky data covering our time range
+                times = pd.date_range(
+                    start=df.index[0],
+                    end=df.index[-1],
+                    freq='1min',
+                    tz='UTC')
+
+                cs = loc.get_clearsky(times, model=model_cs)
+
+                # calculate average CS ghi over the intervals from the forecast
+                # based on list comprehension example in
+                # https://stackoverflow.com/a/55724134/27574852
+                ghi = cs['ghi']
+                dates = df.index
+                ghi_clear = [
+                    ghi.loc[(ghi.index > dates[i]) & (ghi.index <= dates[i+1])]
+                    .mean() for i in range(len(dates) - 1)
+                    ]
+
+                # write to df and calculate clear sky index of ghi
+                df['ghi_clear'] = [np.nan] + ghi_clear
+                df['ghi_csi'] = df['ghi'] / df['ghi_clear']
+
+                # avoid divide by zero issues
+                df.loc[df['ghi'] == 0, 'ghi_csi'] = 0
+
+                # make a dummy column
+                df['dummy'] = 0
+
+                # 60min version of data, centered at bottom of the hour
+                # 1min interpolation, then 60min mean
+                df_60min = (
+                    df[['dummy']]
+                    .resample('1min')
+                    .interpolate()
+                    .resample('60min').mean()
+                )
+                # make timestamps center-labeled for instantaneous pvlib
+                # modeling later
+                df_60min.index = df_60min.index + pd.Timedelta('30min')
+                # drop last row, since we don't have data for the last full
+                # hour (just an instantaneous end point)
+                df_60min = df_60min.iloc[:-1]
+                # "backfill" ghi csi
+                # merge based on nearest index from 60min version looking
+                # forward in 3hr version
+                df_60min = pd.merge_asof(
+                    left=df_60min,
+                    right=df[['ghi_csi', 'init_time']],
+                    on='valid_time',
+                    direction='forward'
+                ).set_index('valid_time')
+
+                # make 60min interval clear sky, centered at bottom of the hour
+                times = pd.date_range(
+                    start=df.index[0]+pd.Timedelta('30m'),
+                    end=df.index[-1]-pd.Timedelta('30m'),
+                    freq='60min',
+                    tz='UTC')
+                cs = loc.get_clearsky(times, model=model_cs)
+
+                # calculate ghi from clear sky and backfilled forecasted clear
+                # sky index
+                df_60min['ghi'] = cs['ghi'] * df_60min['ghi_csi']
+
+                # dni and dhi using pvlib erbs. could also DIRINT or
+                # erbs-driesse
+                sp = loc.get_solarposition(times)
+                out_erbs = pvlib.irradiance.erbs(
+                    df_60min.ghi,
+                    sp.zenith,
+                    df_60min.index,
+                )
+                df_60min['dni'] = out_erbs.dni
+                df_60min['dhi'] = out_erbs.dhi
+
+                # add clearsky ghi
+                df_60min['ghi_clear'] = df_60min['ghi'] / df_60min['ghi_csi']
+
+                # add member number and point, drop dummy column
+                df_60min['member'] = ds['number'].values
+                df_60min['point'] = point
+                df_60min = df_60min.drop(columns=['dummy'])
+
+                # append
+                dfs.append(df_60min)
+
+        # convert to dataframe
+        df_60min_irr = pd.concat(dfs)
+
+        # get deterministic temp_air
+        search_str = ':TMP:2 m above'
+        member = 'c00'  # use the control member
+
+        # try n times based loosely on
+        # https://thingspython.wordpress.com/2021/12/05/how-to-try-something-n-times-in-python/
+        for attempts_remaining in reversed(range(attempts)):
+            attempt_num = attempts - attempts_remaining
+            try:
+                if attempt_num == 1:
+                    # try downloading
+                    FH = FastHerbie(DATES=[init_date],
+                                    model=model,
+                                    product=product,
+                                    fxx=fxx_range,
+                                    member=member)
+                    FH.download(search_str)
+                    ds = FH.xarray(search_str, remove_grib=False)
+                else:
+                    # after first attempt, set overwrite=True to overwrite
+                    # partial files
+                    FH = FastHerbie(DATES=[init_date],
+                                    model=model,
+                                    product=product,
+                                    fxx=fxx_range,
+                                    member=member)
+                    FH.download(search_str, overwrite=True)
+                    ds = FH.xarray(search_str, remove_grib=False)
+            except Exception:
+                if attempts_remaining:
+                    print('attempt ' + str(attempt_num) + ' failed, pause for '
+                          + str((attempt_num)**2) + ' min')
+                    time.sleep(60*(attempt_num)**2)
+            else:
+                break
         else:
-            break
-    else:
-        raise ValueError('download failed, ran out of attempts')
+            raise ValueError('download failed, ran out of attempts')
 
-    # use pick_points for single point or list of points
-    ds2 = ds.herbie.pick_points(pd.DataFrame({
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    }))
+        # use pick_points for single point or list of points
+        ds2 = ds.herbie.pick_points(pd.DataFrame({
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        }))
+        # convert to dataframe
+        df_temp = (ds2
+                   .to_dataframe()
+                   .reset_index()
+                   .set_index('valid_time')[['point', 't2m', 'time']])
+        # add timezone
+        df_temp = df_temp.tz_localize('UTC', level='valid_time')
+        # rename init_time
+        df_temp = df_temp.rename(columns={'time': 'init_time'})
 
-    # convert to dataframe
-    df_temp = (ds2
-               .to_dataframe()
-               .reset_index()
-               .set_index('valid_time')[['point', 't2m']])
-    # add timezone
-    df_temp = df_temp.tz_localize('UTC', level='valid_time')
+        # convert air temperature units
+        df_temp['temp_air'] = df_temp['t2m'] - 273.15
 
-    # convert air temperature units
-    df_temp['temp_air'] = df_temp['t2m'] - 273.15
+        # work through sites (points)
+        if type(latitude) is float or type(latitude) is int:
+            num_sites = 1
+        else:
+            num_sites = len(latitude)
 
-    dfs_temp_air = []
-    # work through sites (points)
-    if type(latitude) is float or type(latitude) is int:
-        num_sites = 1
-    else:
-        num_sites = len(latitude)
-    for point in range(num_sites):
-        df = df_temp[df_temp['point'] == point].copy()
+        dfs_temp_air = []
+        for point in range(num_sites):
+            df = df_temp[(df_temp['point'] == point)].copy()
 
-        # 60min version of data, centered at bottom of the hour
-        # 1min interpolation, then 60min mean
-        df_60min_temp_air = (
-            df[['temp_air']]
-            .resample('1min')
-            .interpolate()
-            .resample('60min').mean()
-        )
+            # 60min version of data, centered at bottom of the hour
+            # 1min interpolation, then 60min mean
+            df_60min_temp_air = (
+                df[['temp_air']]
+                .resample('1min')
+                .interpolate()
+                .resample('60min').mean()
+            )
 
-        # make timestamps center-labeled for instantaneous pvlib modeling
-        # later
-        df_60min_temp_air.index = df_60min_temp_air.index + \
-            pd.Timedelta('30min')
-        # drop last row, since we don't have data for the last full hour
-        # (just an instantaneous end point)
-        df_60min_temp_air = df_60min_temp_air.iloc[:-1]
+            # make timestamps center-labeled for instantaneous pvlib modeling
+            # later
+            df_60min_temp_air.index = df_60min_temp_air.index + \
+                pd.Timedelta('30min')
+            # drop last row, since we don't have data for the last full hour
+            # (just an instantaneous end point)
+            df_60min_temp_air = df_60min_temp_air.iloc[:-1]
 
-        # drop unneeded columns if they exist
-        df_60min_temp_air = df_60min_temp_air.drop(['t2m'],
-                                                   axis=1,
-                                                   errors='ignore')
+            # drop unneeded columns if they exist
+            df_60min_temp_air = df_60min_temp_air.drop(['t2m'],
+                                                       axis=1,
+                                                       errors='ignore')
 
-        # add member number and point, drop dummy column
-        # df_60min_temp_air['member'] = pd.NA
-        df_60min_temp_air['point'] = point
+            # add member number and point, drop dummy column
+            # df_60min_temp_air['member'] = pd.NA
+            df_60min_temp_air['point'] = point
 
-        # append
-        dfs_temp_air.append(df_60min_temp_air)
+            # append
+            dfs_temp_air.append(df_60min_temp_air)
 
-    # concat
-    df_60min_temp_air = pd.concat(dfs_temp_air)
+        # concat
+        df_60min_temp_air = pd.concat(dfs_temp_air)
 
-    # final merge
-    df_60min = pd.merge(df_60min_irr,
-                        df_60min_temp_air,
-                        on=['valid_time', 'point'])
+        # final merge
+        df_60min = pd.merge(df_60min_irr,
+                            df_60min_temp_air,
+                            on=['valid_time', 'point'])
 
-    # add generic wind
-    df_60min['wind_speed'] = 2
+        # add generic wind
+        df_60min['wind_speed'] = 2
 
     return df_60min
