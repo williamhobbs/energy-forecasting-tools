@@ -24,7 +24,7 @@ def model_input_formatter(init_date, run_length, lead_time_to_start=0,
         Number of hours from the init_date to the first interval in the
         forecast.
 
-    model : {'gfs', 'ifs', 'aifs', 'hrrr'}
+    model : {'gfs', 'ifs', 'aifs', 'hrrr', 'gefs}
         Forecast model name, case insensitive. Default is 'gfs'.
 
     resource_type : {'solar, 'wind'}
@@ -80,7 +80,44 @@ def model_input_formatter(init_date, run_length, lead_time_to_start=0,
         elif resource_type == 'wind':
             search_str = (
                 '[UV]GRD:10 m above|[UV]GRD:80 m above|'
-                '[UV]GRD:100 m above|:TMP:2 m above|PRES:surface'
+                '[UV]GRD:100 m above|:TMP:2 m above|PRES:surface|'
+                ':TMP:80 m above|PRES:80 m above'
+            )
+
+    elif model == 'gefs':
+        # GEFS:
+        # 0.5 deg:
+        #   0 to 384 by 3, 390 to 840 by 6 for 00z cycle only
+        # 0.25 deg:
+        #   0 to 240 by 3
+        # runs every 6 hours starting at 00z
+        update_freq = '6h'
+        # round down to last actual initialization time
+        date = init_date.floor(update_freq)
+
+        # offset in hours between selected init_date and fcast run
+        init_offset = int((init_date - date).total_seconds()/3600)
+        lead_time_to_start = lead_time_to_start + init_offset
+
+        # maximum forecast horizon, update with new lead time
+        fxx_max = run_length + lead_time_to_start
+
+        # set forecast lead times
+        fxx_range = range(lead_time_to_start, fxx_max, 3)
+
+        # Herbie inputs
+        if resource_type == 'solar':
+            if fxx_max < 240:
+                product = 'atmos.25'  # 0.25 deg, 'pgrb2.0p25'
+                search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
+            else:
+                product = 'atmos.5'  # 0.5 deg, 'pgrb2.0p5'
+                search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
+        elif resource_type == 'wind':
+            product = 'atmos.5b'  # 0.5 deg, 'pgrb2.0p5
+            search_str = (
+                '[UV]GRD:80 m above|[UV]GRD:100 m above|'
+                ':TMP:80 m above|PRES:80 m above'
             )
 
     elif model == 'ifs':
