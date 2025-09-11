@@ -107,7 +107,7 @@ def model_input_formatter(init_date, run_length, lead_time_to_start=0,
 
         # Herbie inputs
         if resource_type == 'solar':
-            if fxx_max < 240:
+            if fxx_max <= 240:
                 product = 'atmos.25'  # 0.25 deg, 'pgrb2.0p25'
                 search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'
             else:
