@@ -1158,9 +1158,11 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
     # check model
     if (
         model.casefold() != ('ifs').casefold() and
-        model.casefold() != ('aifs').casefold()
+        model.casefold() != ('aifs').casefold() and
+        model.casefold() != ('gefs').casefold()
     ):
-        raise ValueError('model must be ifs or aifs, you entered ' + model)
+        raise ValueError(('model must be ifs, aifs, or gefs, you entered '
+                          + model))
 
     # variable formatting
     # if lat, lon are single values, convert to lists for pickpoints later
