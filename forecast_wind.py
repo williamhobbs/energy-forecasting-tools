@@ -148,9 +148,11 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
     # convert to dataframe, convert names and units
     if model == 'gfs':
         df_temp = ts.to_dataframe()[
-            ['si10', 'ws', 'si100', 'wdir10', 'wdir', 'wdir100', 't2m', 'sp']
+            ['si10', 'ws', 'si100', 'wdir10', 'wdir', 'wdir100',
+             't2m', 't', 'sp', 'pres']
             ]
         df_temp['t2m'] = df_temp['t2m'] - 273.15
+        df_temp['t'] = df_temp['t'] - 273.15
         df_temp.rename(columns={
             'si10': 'wind_speed_10m',
             'ws': 'wind_speed_80m',
@@ -159,7 +161,9 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
             'wdir': 'wind_direction_80m',
             'wdir100': 'wind_direction_100m',
             't2m': 'temp_air_2m',
+            't': 'temp_air_80m',
             'sp': 'pressure_0m',
+            'pres': 'pressure_80m',
             }, inplace=True)
     elif model == 'hrrr':
         df_temp = ts.to_dataframe()[
