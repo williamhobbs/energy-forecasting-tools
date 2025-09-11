@@ -1,14 +1,12 @@
 # energy-forecasting-tools
 
-This repository is a place for some energy forecasting tools. It currently includes solar and wind tools, but may expand one day to include electric load. The wind tools are not as developed at the solar tools.
+This repository is a place for some energy forecasting tools. It currently includes solar and wind tools, but may expand one day to include electric load. Forecasts can be created using the NOAA GFS, NOAA GEFS, NOAA HRRR, and ECMWF IFS and AIFS (open data versions) models. 
 
 For solar, look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
 
-There is also a basic solar ensemble forecast demonstrated in [ensemble_example.ipynb](ensemble_example.ipynb).
+There area also solar ensemble forecasts demonstrated in [ensemble_example.ipynb](ensemble_example.ipynb).
 
-For wind, look at the notebook [wind_example.ipynb](wind_example.ipynb).
-
-Forecasts can be created using the NOAA GFS, NOAA HRRR, and ECMWF IFS (open data version) models. 
+For wind, look at the notebook [wind_example.ipynb](wind_example.ipynb). The wind tools are not as developed at the solar tools.
 
 ## Quick examples
 
