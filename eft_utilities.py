@@ -103,10 +103,20 @@ def model_input_formatter(init_date, run_length, lead_time_to_start=0,
         fxx_max = run_length + lead_time_to_start
 
         # set forecast lead times
-        fxx_range = range(lead_time_to_start, fxx_max, 3)
+        fxx_range = range(lead_time_to_start, fxx_max + 1, 3)
 
         # Herbie inputs
         if resource_type == 'solar':
+            # solar radiation is not available for f00 (lead_time_to_start=0)
+            # adjust accordingly
+            if lead_time_to_start < 3:
+                lead_time_to_start = 3
+                warnings.warn(
+                        ("You have specified a lead_time_to_start less"
+                         "than 3 h. GHI in GEFS is only available "
+                         "starting at F03. The lead_time_to_start has been"
+                         "changed to 3 h."))
+
             if fxx_max <= 240:
                 product = 'atmos.25'  # 0.25 deg, 'pgrb2.0p25'
                 search_str = 'DSWRF|:TMP:2 m above|[UV]GRD:10 m above'

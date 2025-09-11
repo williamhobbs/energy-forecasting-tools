@@ -6,8 +6,9 @@ from eft_utilities import model_input_formatter
 
 
 def get_wind_forecast(latitude, longitude, init_date, run_length,
-                      lead_time_to_start=0, model='gfs', attempts=2,
-                      hrrr_hour_middle=True, hrrr_coursen_window=None):
+                      lead_time_to_start=0, model='gfs', member=None,
+                      attempts=2, hrrr_hour_middle=True,
+                      hrrr_coursen_window=None):
     """
     Get a wind resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -36,7 +37,10 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
 
     model : string, default 'gfs'
         Forecast model. Default is NOAA GFS ('gfs'), but can also be
-        ECMWF IFS ('ifs') or NOAA HRRR ('hrrr')
+        ECMWF IFS ('ifs'), NOAA HRRR ('hrrr'), or NOAA GEFS ('gefs').
+
+    member: string or int
+        For models that are ensembles, pass an appropriate single member label.
 
     attempts : int, optional
         Number of times to try getting forecast data. The function will pause
@@ -101,7 +105,8 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
                         date,
                         model=model,
                         product=product,
-                        fxx=fxx
+                        fxx=fxx,
+                        member=member
                         ).xarray(search_str)
                 else:
                     # after first attempt, set overwrite=True to overwrite
@@ -110,7 +115,8 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
                         date,
                         model=model,
                         product=product,
-                        fxx=fxx
+                        fxx=fxx,
+                        member=member
                         ).xarray(search_str, overwrite=True)
             except Exception:
                 if attempts_remaining:
@@ -163,6 +169,19 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
             't2m': 'temp_air_2m',
             't': 'temp_air_80m',
             'sp': 'pressure_0m',
+            'pres': 'pressure_80m',
+            }, inplace=True)
+    elif model == 'gefs':
+        df_temp = ts.to_dataframe()[
+            ['ws', 'si100', 'wdir', 'wdir100', 't', 'pres']
+            ]
+        df_temp['t'] = df_temp['t'] - 273.15
+        df_temp.rename(columns={
+            'ws': 'wind_speed_80m',
+            'si100': 'wind_speed_100m',
+            'wdir': 'wind_direction_80m',
+            'wdir100': 'wind_direction_100m',
+            't': 'temp_air_80m',
             'pres': 'pressure_80m',
             }, inplace=True)
     elif model == 'hrrr':
