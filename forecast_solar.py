@@ -483,11 +483,13 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
             try:
                 if attempt_num == 1:
                     # try downloading
+                    FH.download(search_string_list[j])
                     ds_dict[j] = FH.xarray(search_string_list[j],
                                            remove_grib=True)
                 else:
                     # after first attempt, set overwrite=True to overwrite
                     # partial files
+                    FH.download(search_string_list[j])
                     ds_dict[j] = FH.xarray(search_string_list[j],
                                            remove_grib=True,
                                            overwrite=True)
