@@ -8,7 +8,7 @@ from eft_utilities import model_input_formatter
 def get_wind_forecast(latitude, longitude, init_date, run_length,
                       lead_time_to_start=0, model='gfs', member=None,
                       attempts=2, hrrr_hour_middle=True,
-                      hrrr_coursen_window=None):
+                      hrrr_coursen_window=None, priority=None):
     """
     Get a wind resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -60,6 +60,11 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
         smoothing to the HRRR model. The HRRR has a native resolution of
         about 3 km, so a value of 10 results in approx. 30 x 30 km grid.
 
+    priority : list or string
+        List of model sources to get the data in the order of download
+        priority, or string for a single source. See Herbie docs.
+        Typical values would be 'aws' or 'google'.
+
     Returns
     -------
     data : pandas.DataFrane
@@ -106,7 +111,8 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
                         model=model,
                         product=product,
                         fxx=fxx,
-                        member=member
+                        member=member,
+                        priority=priority
                         ).xarray(search_str)
                 else:
                     # after first attempt, set overwrite=True to overwrite
@@ -116,7 +122,8 @@ def get_wind_forecast(latitude, longitude, init_date, run_length,
                         model=model,
                         product=product,
                         fxx=fxx,
-                        member=member
+                        member=member,
+                        priority=priority
                         ).xarray(search_str, overwrite=True)
             except Exception:
                 if attempts_remaining:

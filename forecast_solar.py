@@ -10,7 +10,7 @@ from eft_utilities import model_input_formatter
 def get_solar_forecast(latitude, longitude, init_date, run_length,
                        lead_time_to_start=0, model='gfs', member=None,
                        attempts=2, hrrr_hour_middle=True,
-                       hrrr_coursen_window=None):
+                       hrrr_coursen_window=None, priority=None):
     """
     Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_.
@@ -62,6 +62,11 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
         smoothing to the HRRR model. The HRRR has a native resolution of
         about 3 km, so a value of 10 results in approx. 30 x 30 km grid.
 
+    priority : list or string
+        List of model sources to get the data in the order of download
+        priority, or string for a single source. See Herbie docs.
+        Typical values would be 'aws' or 'google'.
+
     Returns
     -------
     data : pandas.DataFrane
@@ -108,7 +113,8 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                         model=model,
                         product=product,
                         fxx=fxx,
-                        member=member
+                        member=member,
+                        priority=priority
                         ).xarray(search_str)
                 else:
                     # after first attempt, set overwrite=True to overwrite
@@ -118,7 +124,8 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
                         model=model,
                         product=product,
                         fxx=fxx,
-                        member=member
+                        member=member,
+                        priority=priority
                         ).xarray(search_str, overwrite=True)
             except Exception:
                 if attempts_remaining:
@@ -382,7 +389,7 @@ def get_solar_forecast(latitude, longitude, init_date, run_length,
 def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
                             lead_time_to_start=0, model='gfs', member=None,
                             attempts=2, hrrr_hour_middle=True,
-                            hrrr_coursen_window=None):
+                            hrrr_coursen_window=None, priority=None):
     """
     Get a solar resource forecast for one or several sites from one of several
     NWPs. This function uses Herbie [1]_ and pvlib [2]_. This version
@@ -436,6 +443,11 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
         smoothing to the HRRR model. The HRRR has a native resolution of
         about 3 km, so a value of 10 results in approx. 30 x 30 km grid.
 
+    priority : list or string
+        List of model sources to get the data in the order of download
+        priority, or string for a single source. See Herbie docs.
+        Typical values would be 'aws' or 'google'.
+
     Returns
     -------
     data : pandas.DataFrane
@@ -473,7 +485,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
     i = []
     ds_dict = {}
     FH = FastHerbie([date], model=model, product=product, fxx=fxx_range,
-                    member=member)
+                    member=member, priority=priority)
     for j in range(0, len(search_string_list)):
         # get solar, 10m wind, and 2m temp data
         # try n times based loosely on
@@ -760,7 +772,7 @@ def get_solar_forecast_fast(latitude, longitude, init_date, run_length,
 
 def get_solar_forecast_ensemble_subset(
         latitude, longitude, init_date, run_length, lead_time_to_start=0,
-        model='ifs', attempts=2, num_members=3):
+        model='ifs', attempts=2, num_members=3, priority=None):
     """
     Get solar resource forecasts for one or several sites using a subset of
     ensemble members. Use `get_solar_forecast_ensemble` for all ensemble
@@ -801,6 +813,11 @@ def get_solar_forecast_ensemble_subset(
 
     num_members : int, default 3
         Number of ensemble members to get. IFS has 50 members.
+
+    priority : list or string
+        List of model sources to get the data in the order of download
+        priority, or string for a single source. See Herbie docs.
+        Typical values would be 'aws' or 'google'.
 
     Returns
     -------
@@ -855,14 +872,16 @@ def get_solar_forecast_ensemble_subset(
                     ds = FastHerbie(DATES=[init_date],
                                     model='ifs',
                                     product='enfo',
-                                    fxx=fxx_range).xarray(search_str)
+                                    fxx=fxx_range,
+                                    priority=priority).xarray(search_str)
                 else:
                     # after first attempt, set overwrite=True to overwrite
                     # partial files
                     ds = FastHerbie(DATES=[init_date],
                                     model='ifs',
                                     product='enfo',
-                                    fxx=fxx_range).xarray(search_str,
+                                    fxx=fxx_range,
+                                    priority=priority).xarray(search_str,
                                                           overwrite=True)
             except Exception:
                 if attempts_remaining:
@@ -1097,7 +1116,7 @@ def get_solar_forecast_ensemble_subset(
 
 def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                                 lead_time_to_start=0, model='ifs',
-                                attempts=2):
+                                attempts=2, priority=None):
     """
     Get solar resource forecasts for one or several sites using all ensemble
     members. Using `get_solar_forecast_ensemble_subset` may be fast for a
@@ -1135,6 +1154,11 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
         Number of times to try getting forecast data. The function will pause
         for n^2 minutes after each n attempt, e.g., 1 min after the first
         attempt, 4 minutes after the second, etc.
+
+    priority : list or string
+        List of model sources to get the data in the order of download
+        priority, or string for a single source. See Herbie docs.
+        Typical values would be 'aws' or 'google'.
 
     Returns
     -------
@@ -1197,7 +1221,8 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                     FH = FastHerbie(DATES=[init_date],
                                     model=model,
                                     product='enfo',
-                                    fxx=fxx_range)
+                                    fxx=fxx_range,
+                                    priority=priority)
                     FH.download(search_str)
                     ds = FH.xarray(search_str, remove_grib=False)
                 else:
@@ -1207,7 +1232,8 @@ def get_solar_forecast_ensemble(latitude, longitude, init_date, run_length,
                     FH = FastHerbie(DATES=[init_date],
                                     model=model,
                                     product='enfo',
-                                    fxx=fxx_range)
+                                    fxx=fxx_range,
+                                    priority=priority)
                     FH.download(search_str, overwrite=True)
                     ds = FH.xarray(search_str, remove_grib=False)
             except Exception:
