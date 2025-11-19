@@ -1,5 +1,9 @@
-# energy-forecasting-tools
+# Important Update:
 
+**This toolset is now available as hEFTy, https://github.com/williamhobbs/hefty, and on pypi as `hefty`.** This repository, `energy-forecasting-tools`, may be archived in the future.
+
+------
+# energy-forecasting-tools
 This repository is a place for some energy forecasting tools. It currently includes solar and wind tools, but may expand one day to include electric load. Forecasts can be created using the NOAA GFS, NOAA GEFS, NOAA HRRR, and ECMWF IFS and AIFS (open data versions) models. 
 
 For solar, look at the notebook [solar_example.ipynb](solar_example.ipynb) for some examples, and [more_solar_examples.ipynb](more_solar_examples.ipynb) for more examples. Both of these convert the resource forecasts to power.
